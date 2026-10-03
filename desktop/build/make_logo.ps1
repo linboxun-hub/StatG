@@ -15,8 +15,7 @@ param(
   [Parameter(Mandatory = $true)][string]$Source,
   [Parameter(Mandatory = $true)][string]$OutDir,
   [int]$Size = 1024,     # 工作分辨率：越大越锐利（侧边栏 52px / 启动页 200px / ico 最大 256px）
-  [int]$Erode = 36,      # 腐蚀半径 = 镂空壁厚。壁厚最多到「最细笔画宽度的一半」，
-                         # 再细的笔画（折线）会整条被腐蚀掉、退回实心，这是正常结果
+  [int]$Thin = 22,         # 把紫圈磨细多少像素（只动紫像素，白柱白线不动）
   [string]$DumpDir = '',  # 给了就把镂空前的裁切图存到这里（调试用）
   [double]$Pad = 0.05      # 裁切时在标志外围留的白，用来容纳原图自带的柔光
 )
@@ -151,6 +150,8 @@ public static class ImgUtil {
     }
   }
   // 径向渐变圆盘：中心 c1 → 边缘 c2，圆外透明。给图标当「底」，撑住浅色背景和小尺寸
+  // 注意：GDI+ 32bppArgb 的内存布局是 BGRA——蓝在第一个字节。写反了不会报错，
+  // 只会把深紫 (61,34,120) 变成暗红 (120,34,61)，中间糊成一坨猪肝色，很难查。
   public static void Disc(byte[] px, int w, int h, int stride,
                           int r1, int g1, int b1, int r2, int g2, int b2, double radiusRatio) {
     double cx = (w - 1) / 2.0, cy = (h - 1) / 2.0;
@@ -163,12 +164,54 @@ public static class ImgUtil {
         int i = y * stride + x * 4;
         if (d > R) { px[i] = 0; px[i + 1] = 0; px[i + 2] = 0; px[i + 3] = 0; continue; }
         double t = d / R; if (t > 1) t = 1;
-        px[i] = (byte)Math.Round(r1 + (r2 - r1) * t);
-        px[i + 1] = (byte)Math.Round(g1 + (g2 - g1) * t);
-        px[i + 2] = (byte)Math.Round(b1 + (b2 - b1) * t);
+        px[i] = (byte)Math.Round(b1 + (b2 - b1) * t);   // B
+        px[i + 1] = (byte)Math.Round(g1 + (g2 - g1) * t); // G
+        px[i + 2] = (byte)Math.Round(r1 + (r2 - r1) * t); // R
         px[i + 3] = (byte)(d > R - feather ? Math.Round(255.0 * (R - d) / feather) : 255);
       }
     }
+  }
+
+  // 把「紫圈」磨细：只对紫像素（白柱白线不受影响）做腐蚀，
+  // 被腐蚀掉的那圈清成透明。腐蚀是均匀的，所以圈的内外两边同时内收，
+  // 圈变细，同时圈和柱子之间的空隙还会变大一点。
+  public static void ThinViolet(byte[] px, int w, int h, int stride, int radius) {
+    byte[] m = new byte[w * h];          // 紫像素（不透明核心）
+    for (int y = 0; y < h; y++) {
+      int row = y * stride;
+      for (int x = 0; x < w; x++) {
+        int i = row + x * 4;
+        if (px[i + 3] < 128) continue;
+        int R = px[i + 2], G = px[i + 1], B = px[i];
+        int mx = Math.Max(R, Math.Max(G, B));
+        int mn = Math.Min(R, Math.Min(G, B));
+        double sat = mx > 0 ? (mx - mn) / (double)mx : 0;
+        if (sat >= 0.25) m[y * w + x] = 255;   // 紫
+      }
+    }
+    if (radius <= 0) return;
+    byte[] t = new byte[m.Length];
+    for (int y = 0; y < h; y++)
+      for (int x = 0; x < w; x++) {
+        byte mn = 255;
+        for (int k = -radius; k <= radius; k++) {
+          int xx = x + k; if (xx < 0 || xx >= w) continue;
+          if (m[y * w + xx] < mn) mn = m[y * w + xx];
+        }
+        t[y * w + x] = mn;
+      }
+    for (int x = 0; x < w; x++)
+      for (int y = 0; y < h; y++) {
+        byte mn = 255;
+        for (int k = -radius; k <= radius; k++) {
+          int yy = y + k; if (yy < 0 || yy >= h) continue;
+          if (t[yy * w + x] < mn) mn = t[yy * w + x];
+        }
+        if (mn == 0 && m[y * w + x] == 255) {
+          int i = y * stride + x * 4;   // 原本是紫、腐蚀后不是了 → 抠掉
+          px[i] = 0; px[i + 1] = 0; px[i + 2] = 0; px[i + 3] = 0;
+        }
+      }
   }
 }
 '@
@@ -250,25 +293,32 @@ $probe.Dispose()
 $half = $Size / 2.0
 "圈外半径: {0:N0}px（画布半边 {1:N0}px，占 {2:N0}%）" -f $ringR, $half, (100.0 * $ringR / $half)
 
-# 重新上色：白→纯白，紫→品牌紫；柔光整段切掉，只留干净的一道圈边
-Invoke-Pixels $work { param($w, $h, $s, $b) [ImgUtil]::Recolor($b, $w, $h, $s, 36, 52, 167, 139, 250, 90, 255, 255, 255, 255) }
-$work.Save("$OutDir\logo-mark.png", [System.Drawing.Imaging.ImageFormat]::Png)
-"  logo-mark.png   重新上色后的标志（透明底）"
+# 重新上色：白→纯白，紫→深品牌紫，#7C3AED（比之前的浅薰衣草深，色相 258° 是正紫）
+Invoke-Pixels $work { param($w, $h, $s, $b) [ImgUtil]::Recolor($b, $w, $h, $s, 36, 52, 124, 58, 237, 90, 255, 255, 255, 255) }
 
-# ── 3. 垫深紫圆盘当底，图标才有「体」──
-# 圆盘半径 = 圈的外半径，所以圆盘边缘正好收在紫圈外沿，外围还留着一圈辉光
+# 圈磨细（只动紫像素，白柱白线不动）
+if ($Thin -gt 0) {
+  Invoke-Pixels $work { param($w, $h, $s, $b) [ImgUtil]::ThinViolet($b, $w, $h, $s, $Thin) }
+  "  圈磨细: {0}px（原 142px 左右）" -f $Thin
+}
+
+# 侧边栏/启动页用：中间掏空，透明底，让后面的底色透出来
+$work.Save("$OutDir\logo-icon.png", [System.Drawing.Imaging.ImageFormat]::Png)
+"  logo-icon.png   圈磨细 + 中间镂空（侧边栏 52px / 启动页 200px 用它）"
+
+# .ico 用：垫一块深紫圆盘当底。透明图标贴到白色任务栏上，白柱子会消失
 $disc = New-Object System.Drawing.Bitmap($Size, $Size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
 $ratio = $ringR / $half
-Invoke-Pixels $disc { param($w, $h, $s, $b) [ImgUtil]::Disc($b, $w, $h, $s, 61, 34, 120, 17, 12, 38, $script:ratio) }
+Invoke-Pixels $disc { param($w, $h, $s, $b) [ImgUtil]::Disc($b, $w, $h, $s, 53, 25, 107, 12, 10, 30, $script:ratio) }
 $dg = [System.Drawing.Graphics]::FromImage($disc)
 $dg.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
 $dg.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
 $dg.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
 $dg.DrawImage($work, $cloneRect)
 $dg.Dispose()
-$disc.Save("$OutDir\logo-icon.png", [System.Drawing.Imaging.ImageFormat]::Png)
+$disc.Save("$OutDir\logo-ico.png", [System.Drawing.Imaging.ImageFormat]::Png)
 $disc.Dispose()
-"  logo-icon.png   深紫圆盘 + 重新上色的标志（侧边栏/启动页/ico 都用它）"
+"  logo-ico.png   同款 + 深紫圆盘（.ico 用，浅色背景才撑得住）"
 
 $work.Dispose()
 $srcImg.Dispose(); $srcBmp.Dispose()
