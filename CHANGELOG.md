@@ -23,16 +23,14 @@
   GBK）编码；遇到生僻字就 `UnicodeEncodeError`。现在固定 `PYTHONIOENCODING=utf-8`。
 - **运行时打包脚本的版本号拼接错**：拿 `3.13.9` 去掉点得到 `3139`，而 CPython
   的 `._pth` 用的是「主+次」版本 `313`。写出来的文件名 Python 根本不读，标准库
-  都加载不了，后面每一步都是没头绪的 `No module named ...`。现在改成从解出来的
-  文件里直接认 `python*._pth`，不猜。
+  都加载不了。现在改成从解出来的文件里直接认 `python*._pth`，不猜。
 - **打包脚本被 pip 的警告掀翻**：PowerShell 5.1 会把原生命令写进 stderr 的每
   一行包成 ErrorRecord，而脚本是 `$ErrorActionPreference = 'Stop'`，于是 pip
   一句「script 装好了但不在 PATH 上」的警告就能让脚本中途终止。现在所有原生命
   令统一走一个只认退出码的封装。
-- **误判 DoubleML 打不进运行时**：查 wheel 时只筛了 `win_amd64`，而 DoubleML
-  发的是 `py3-none-any`（纯 Python），Windows 上装得上。现在由脚本的 `-Extras`
-  单独装，原因只是它的依赖太重（plotly 50MB、mypy、optuna、sqlalchemy……70MB
-  以上），不想让用不到 DML 的人也背着。
+- **DoubleML 改成单独装**：它是 `py3-none-any` 的纯 Python 包，Windows 上装得上，
+  但依赖太重（plotly 50MB、mypy、optuna、sqlalchemy……70MB 以上），而 DML 只是
+  众多分析方法里的一个，所以由脚本的 `-Extras` 单独装，用不到的人不背这份重量。
 
 ### 调整
 - 依赖锁版本，拆成两份：`backend/requirements.txt` 给开发时用；
@@ -57,16 +55,13 @@
   可填 GitHub 仓库、检查最新 Release、直接下载安装包并安装。启动时后台静默检查一次
   （6 小时内不重复打 GitHub），有新版本会在侧边栏给个「有新版本」的小点。
 - **桌面版整体重做**：改成应用外壳布局（侧边栏与顶栏钉死，只有内容区滚动）；
-  换成新 logo 并重新上色；产品名统一为 StatG。
+  换成新 logo；产品名统一为 StatG。
 
 ### 修复
-- 图标中间一坨暗红：GDI+ 32 位图的内存布局是 BGRA，之前把红通道写进了蓝槽，
-  指定的深紫实际渲染成了 `#78223D`。
 - 数据清洗 / 代码编辑器页面会被顶破屏、出现两条滚动条（它们本就按 `100vh - 64px` 设计）。
 
 ### 调整
 - 侧边栏 logo 40px → 52px，启动页 logo 132px → 200px。
-- 紫圈磨细（142px → 98px），紫色由浅薰衣草 `#A78BFA` 加深为 `#7C3AED`，圈内掏空。
 
 ## [1.0.0] - 2026-10-03
 

@@ -3,21 +3,23 @@
 Stata/StatsPAI 的图形化封装：把面板数据清洗、回归前统计描述、基准回归、稳健性检验、
 机制检验、异质性分析串成一条实证论文的标准流程，结果可导出 Word / LaTeX / Markdown。
 
-- **网页版**：React + Vite + Ant Design（:5173）+ FastAPI（:8000）
-- **桌面版**：Electron 壳子，自带本地后端和一个 `/api` 反向代理，双击即用，不用开终端
+一个 Electron 桌面程序：React + Vite + Ant Design 的界面，FastAPI 后端，自带本地
+后端和一个 `/api` 反向代理。双击即用，不用开终端。
 
 ## 目录
 
 ```
 frontend/       React 前端；public/ 放 logo，dist/ 是构建产物
 backend/        FastAPI 后端；services/ 是各分析方法
-desktop/        Electron 打包；build/ 放图标、启动页和依赖打包脚本；release/ 是打包结果
+desktop/        Electron 打包；build/ 放图标、启动页和依赖打包脚本
 desktop/python-runtime/   打包用的自带 Python 运行时（生成物，不进 git）
-docs/           帮助文档内容
+knowledge/      程序内置的知识库内容（Stata 命令速查等）
 CHANGELOG.md    版本变更记录
 ```
 
 ## 本地跑起来
+
+开发时网页调试用（正式发布的是桌面版）：
 
 ```bash
 # 后端（:8000）
@@ -28,6 +30,7 @@ cd frontend && npm install && npm run dev
 ```
 
 后端依赖：`fastapi uvicorn statsmodels linearmodels doubleml matplotlib pandas numpy`。
+
 ```bash
 cd backend && pip install -r requirements.txt
 ```
@@ -98,7 +101,7 @@ set ELECTRON_CACHE=%CD%\.electron-cache
 
 cd frontend && npm run build
 
-# 3. 自带 Python 运行时（约 500MB，要联网拉 PyPI）。
+# 3. 自带 Python 运行时（约 750MB，要联网拉 PyPI）。
 #    已经生成过、requirements 没改的话，这一步会自动重打，不想等可以跳过
 cd desktop && npm run runtime
 
@@ -132,29 +135,10 @@ cd desktop && set GH_TOKEN=<你的token> && npm run publish
   「下载」文件夹，装不装由他定
 - Release 里要带 `setup` 或 `安装` 字样的 `.exe`，程序才会认得出安装包
 
-## 换 logo
-
-原始大图 → `frontend/public/logo-icon.png`（侧边栏 52px / 启动页 200px / .ico 共用）：
-
-```bash
-powershell -File desktop\build\make_logo.ps1 -Source <你的原图.png> -OutDir frontend\public
-powershell -File desktop\build\make_icon.ps1 frontend\public\logo-icon.png desktop\build\icon.ico
-```
-
-`make_logo.ps1` 会做三件事：按包围盒裁正方形、按饱和度把像素分流重新上色
-（白/紫各一条 alpha 曲线）、把紫圈磨细。默认参数就是当前效果，`-Thin` 调圈粗细。
-
-**当前这份 logo 不是它做的**，是 `crop_logo.ps1`：只把原图裁成正圆（外加把暗部
-提白），不动原图的颜色。要的就是原样：
-
-```bash
-powershell -File desktop\build\crop_logo.ps1 -Source <原图> -OutDir frontend\public
-```
-
 ## 已知问题
 
 - 只有 Windows 安装包；mac 要另配 `mac` target
-- 安装包里带 Python 运行时，体积从约 110MB 涨到约 400MB
+- 安装包里带 Python 运行时，体积从约 110MB 涨到约 350MB
 - `__pycache__` 保留没删：那一份是 200MB，但删了首次启动要多花约 7 秒编译，
   而程序装在 `C:\Program Files` 下默认是只读的，意味着每次都慢这 7 秒。
   只打 portable 版的话可以用 `npm run runtime -- -NoPyCache`

@@ -27,11 +27,19 @@ _*.log
 _*.err
 _server.log*
 # user data, kept out of VCS
+# 数据文件默认一律不进库——这些是本机跑分析产生的私有数据，不是程序内容。
+# 唯一例外的就是程序自带的演示数据集（见下面的 ! 规则）
 *.dta
 *.xlsx
 *.xls
 *.sav
 *.parquet
+*.csv
+/*.png
+# 例外：generate_demo.py 用固定种子生成的演示数据，程序要读它
+!backend/demo_data/*.csv
+# 本地调试脚本、原型图、随手导出的图，都不是程序内容
+*.bat
 # third-party upstream copies (not this project code)
 StatsPAI-main/
 StatsPAI-main.zip
@@ -51,6 +59,8 @@ Thumbs.db
 desktop.ini
 .idea/
 .vscode/
+# Claude Code 的本地配置（浏览器预览之类的），不是程序内容
+.claude/
 # Electron desktop packaging
 desktop/node_modules/
 desktop/release/
