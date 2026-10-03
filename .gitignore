@@ -11,6 +11,10 @@ frontend/dist/
 __pycache__/
 .pytest_cache/
 .mypy_cache/
+# vite dev 输出
+frontend/_vite.*.log
+# 桌面版截图等过程产物
+desktop/app-*.png
 # runtime artifacts and logs
 backend/exports/
 *.log

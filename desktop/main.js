@@ -193,9 +193,31 @@ function startUiServer() {
 }
 
 // ── 窗口 ──
+function stateFile() { return path.join(app.getPath('userData'), 'window-state.json') }
+
+function loadWindowState() {
+  try {
+    const s = JSON.parse(fs.readFileSync(stateFile(), 'utf8'))
+    if (typeof s.width === 'number' && typeof s.height === 'number') return s
+  } catch (e) {}
+  return null
+}
+
+function saveWindowState() {
+  if (!win || win.isDestroyed()) return
+  try {
+    // 最大化时存的是还原后的尺寸，否则每次还原都会变成最大化的大小
+    const b = win.isMaximized() ? win.getNormalBounds() : win.getBounds()
+    fs.writeFileSync(stateFile(), JSON.stringify({ ...b, maximized: win.isMaximized() }))
+  } catch (e) {}
+}
+
 function createWindow() {
+  const st = loadWindowState()
   win = new BrowserWindow({
-    width: 1480, height: 940, minWidth: 1080, minHeight: 720, show: false,
+    width: st?.width || 1480, height: st?.height || 940,
+    x: st?.x, y: st?.y,
+    minWidth: 1100, minHeight: 700, show: false,
     icon: fs.existsSync(ICON) ? ICON : undefined,
     backgroundColor: '#0f172a',
     autoHideMenuBar: true,
@@ -212,6 +234,13 @@ function createWindow() {
     shell.openExternal(url)
     return { action: 'deny' }
   })
+  // 记住位置和尺寸；默认以最大化打开，界面不会忽大忽小
+  if (st?.maximized !== false) win.maximize()
+  let saveTimer = null
+  const saveSoon = () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveWindowState, 400) }
+  win.on('resize', saveSoon)
+  win.on('move', saveSoon)
+  win.on('close', saveWindowState)
   win.on('closed', () => { win = null })
 }
 
@@ -244,7 +273,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.on('window-all-closed', async () => { await stopBackend(); if (process.platform !== 'darwin') app.quit() })
-  app.on('before-quit', async (e) => { e.preventDefault(); await stopBackend(); app.exit(0) })
+  app.on('before-quit', async (e) => { e.preventDefault(); saveWindowState(); await stopBackend(); app.exit(0) })
 }
 
 function dialogError(title, content) {

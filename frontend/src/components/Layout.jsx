@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Layout as AntLayout, Menu, Select, Tag } from 'antd'
 import GlobalAIChat from './GlobalAIChat'
@@ -16,7 +16,6 @@ import {
   QuestionCircleOutlined,
   SettingOutlined,
   ProjectOutlined,
-  LineChartOutlined,
   FolderOpenOutlined,
   AppstoreOutlined,
 } from '@ant-design/icons'
@@ -123,6 +122,12 @@ export default function Layout() {
   }, [activeParent])
   const [projects, setProjects] = useState([])
   const [currentProjectId, setCurrentProjectId] = useState(null)
+  // 切页时把内容区滚回顶部：侧边栏不重建，滚动位置不会自己归位
+  const contentRef = useRef(null)
+  useEffect(() => {
+    const el = contentRef.current && contentRef.current.parentElement
+    if (el) el.scrollTo({ top: 0 })
+  }, [location.pathname, location.search])
 
   useEffect(() => {
     projectAPI.list().then(r => {
@@ -141,19 +146,18 @@ export default function Layout() {
   const currentProject = projects.find(p => p.id === currentProjectId)
 
   return (
-    <AntLayout style={{ minHeight: '100vh' }}>
-      <Sider width={240} style={{ background: '#0f172a', overflow: 'auto' }}>
+    <AntLayout style={{ height: '100vh', overflow: 'hidden' }}>
+      {/* 侧边栏钉死在左边，只有它自己内部滚动，不跟着内容区跑 */}
+      <Sider width={240} className="sider-scroll" style={{
+        background: '#0f172a', overflow: 'hidden auto', overscrollBehavior: 'contain', flexShrink: 0,
+      }}>
         {/* Logo */}
-        <div style={{ height: 56, display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px', borderBottom: '1px solid #1e293b' }}>
-          <div style={{
-            width: 30, height: 30, borderRadius: 7,
-            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontSize: 13,
-          }}>
-            <LineChartOutlined />
-          </div>
-          <span style={{ color: '#fff', fontWeight: 600, fontSize: 13 }}>Stata 助手</span>
+        <div style={{
+          height: 70, display: 'flex', alignItems: 'center', gap: 11, padding: '0 20px',
+          borderBottom: '1px solid #1e293b', flexShrink: 0,
+        }}>
+          <img src="/logo-tile.png" alt="Stata 助手" style={{ width: 40, height: 40, borderRadius: 9, display: 'block' }} />
+          <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>Stata 助手</span>
         </div>
 
         {/* 项目选择器 */}
@@ -187,11 +191,11 @@ export default function Layout() {
           theme="dark"
         />
       </Sider>
-      <AntLayout>
+      <AntLayout style={{ height: '100%', overflow: 'hidden', minWidth: 0 }}>
         <Header style={{
-          background: '#fff', padding: '0 32px', height: 64,
+          background: '#fff', padding: '0 32px', height: 64, flexShrink: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          borderBottom: '1px solid #e2e8f0', position: 'sticky', top: 0, zIndex: 10,
+          borderBottom: '1px solid #e2e8f0', zIndex: 10,
         }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#1e293b' }}>
@@ -202,8 +206,13 @@ export default function Layout() {
             </div>
           </div>
         </Header>
-        <Content style={{ background: '#f8fafc', overflow: 'auto' }}>
-          <Outlet />
+        <Content style={{
+          background: '#f8fafc', flex: 'auto', minHeight: 0,
+          overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain',
+        }}>
+          <div ref={contentRef} style={{ minHeight: '100%' }}>
+            <Outlet />
+          </div>
         </Content>
       </AntLayout>
       <GlobalAIChat />

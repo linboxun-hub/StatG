@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $logo = $args[0]; $out = $args[1]
 $sizes = 256,128,64,48,32,16

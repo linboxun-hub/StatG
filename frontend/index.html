@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Stata 实证数据分析助手</title>
+    <style>
+      /* 桌面应用外壳：整页不滚动，只有各面板自己滚，避免浏览器式的整页拖拽 */
+      html, body, #root { height: 100%; margin: 0; overscroll-behavior: none; }
+      ::-webkit-scrollbar { width: 10px; height: 10px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, .38); border-radius: 99px;
+        border: 3px solid transparent; background-clip: content-box;
+      }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, .65); background-clip: content-box; }
+      ::-webkit-scrollbar-corner { background: transparent; }
+      /* 深色侧边栏用亮一点的滚动条 */
+      .sider-scroll::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, .28); background-clip: content-box; }
+      .sider-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, .5); background-clip: content-box; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
