@@ -20,7 +20,7 @@ public class Win {
 '@
 
 $best = $null
-Get-Process -Name 'Stata助手', 'electron' -ErrorAction SilentlyContinue | ForEach-Object {
+Get-Process -Name 'StatG', 'Stata助手', 'electron' -ErrorAction SilentlyContinue | ForEach-Object {
   if ($_.MainWindowHandle -eq 0) { return }
   if ($_.MainWindowTitle -notlike "*$TitleContains*") { return }
   # 先还原再最大化：最小化/隐藏的窗口拿不到真实尺寸

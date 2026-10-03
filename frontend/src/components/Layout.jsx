@@ -153,11 +153,14 @@ export default function Layout() {
       }}>
         {/* Logo */}
         <div style={{
-          height: 70, display: 'flex', alignItems: 'center', gap: 11, padding: '0 20px',
+          height: 84, display: 'flex', alignItems: 'center', gap: 12, padding: '0 20px',
           borderBottom: '1px solid #1e293b', flexShrink: 0,
         }}>
-          <img src="/logo-tile.png" alt="Stata 助手" style={{ width: 40, height: 40, borderRadius: 9, display: 'block' }} />
-          <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>Stata 助手</span>
+          <img src="/logo-mark.png" alt="StatG" style={{ width: 52, height: 52, borderRadius: 11, display: 'block' }} />
+          <div>
+            <div style={{ color: '#fff', fontWeight: 600, fontSize: 16, lineHeight: 1.1 }}>StatG</div>
+            <div style={{ color: '#64748b', fontSize: 10, marginTop: 3 }}>实证数据分析助手</div>
+          </div>
         </div>
 
         {/* 项目选择器 */}

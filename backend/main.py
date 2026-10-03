@@ -27,7 +27,7 @@ from services import kb_ingest as kb_ingest_mod
 from services import doc_extract as doc_extract_mod
 from services.reg_utils import json_safe
 
-app = FastAPI(title="Stata 实证数据分析助手 API", version="2.0.0")
+app = FastAPI(title="StatG 实证数据分析助手 API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,

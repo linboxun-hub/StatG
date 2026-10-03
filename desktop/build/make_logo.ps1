@@ -1,95 +1,204 @@
-﻿# 从原始 logo 生成应用内使用的图标版本。
+﻿# 从原始大图生成「镂空」logo。
 #
-# 原始 PNG 是「黑色图形 + 透明背景」，在深色侧边栏和深色启动页上等于隐形，
-# 所以这里做两件事：
-#   1. 把黑色图形按亮度染成白色（保留抗锯齿边缘）
-#   2. 再垫一层品牌渐变圆角底板，做成真正的应用图标
+# 原图是 3840×2160 的横版图（紫圈 + 白柱），要先按标志的包围盒裁成正方形。
+# 「镂空」= 只保留图形的外壁，内部掏空透明，这样放在深色侧边栏上能透出底色，
+#   不会像实心图标那样糊成一团。壁厚靠形态学腐蚀（min 滤波）保证均匀——
+#   直接缩小内层再相减会让圆环很粗、柱子很细，粗细不一致。
 #
-# 产出：logo-white.png（白图形、无底板）、logo-tile.png（渐变底板 + 白图形）
-# 用法：powershell -File make_logo.ps1 -Source <原始png> -OutDir <输出目录>
+# 腐蚀是逐像素重活，用 Add-Type 现场编一段 C# 跑（PowerShell 循环慢 2~3 个数量级）。
+#
+# 产出：logo-mark.png（镂空、透明底）、logo-tile.png（镂空 + 深色圆角底，给 .ico 用）
+# 用法：powershell -File make_logo.ps1 -Source <原图> -OutDir <输出目录>
 param(
   [Parameter(Mandatory = $true)][string]$Source,
-  [Parameter(Mandatory = $true)][string]$OutDir
+  [Parameter(Mandatory = $true)][string]$OutDir,
+  [int]$Size = 1024,     # 工作分辨率：越大越锐利（侧边栏 52px / 启动页 200px / ico 最大 256px）
+  [int]$Erode = 36,      # 腐蚀半径 = 镂空壁厚。壁厚最多到「最细笔画宽度的一半」，
+                         # 再细的笔画（折线）会整条被腐蚀掉、退回实心，这是正常结果
+  [string]$DumpDir = ''  # 给了就把镂空前的裁切图存到这里（调试用）
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
+Add-Type @'
+using System;
+public static class ImgUtil {
+  // 取亮度高于阈值的像素的包围盒
+  public static void BBox(byte[] px, int w, int h, int stride, double lumOn,
+                          out int x0, out int y0, out int x1, out int y1) {
+    x0 = int.MaxValue; y0 = int.MaxValue; x1 = int.MinValue; y1 = int.MinValue;
+    for (int y = 0; y < h; y++) {
+      int row = y * stride;
+      for (int x = 0; x < w; x++) {
+        int i = row + x * 4;
+        double lum = 0.299 * px[i + 2] + 0.587 * px[i + 1] + 0.114 * px[i];
+        if (lum < lumOn) continue;
+        if (x < x0) x0 = x; if (x > x1) x1 = x;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+    }
+    if (x0 > x1) { x0 = y0 = 0; x1 = y1 = 0; }
+  }
 
-$SIZE   = 512
-$INSET  = 0.74    # 图形占底板的比例
-$RADIUS = 0.235   # 圆角占边长的比例
+  // 就地镂空：二值掩码（亮度 >= lumOn）→ 均匀腐蚀 radius → 两者之差即外壁；
+  // 最后对外壁 alpha 做 3x3 均值柔化，避免放大后锯齿明显
+  public static void Hollow(byte[] px, int w, int h, int stride, double lumOn, int radius) {
+    byte[] o = new byte[w * h];
+    for (int y = 0; y < h; y++) {
+      int row = y * stride;
+      for (int x = 0; x < w; x++) {
+        int i = row + x * 4;
+        double lum = 0.299 * px[i + 2] + 0.587 * px[i + 1] + 0.114 * px[i];
+        o[y * w + x] = (lum >= lumOn) ? (byte)255 : (byte)0;
+      }
+    }
+    // 可分离 min 滤波（横、纵各用独立数组，避免原地写导致单向半径翻倍）
+    byte[] t = new byte[o.Length];
+    byte[] e = new byte[o.Length];
+    for (int y = 0; y < h; y++) {
+      for (int x = 0; x < w; x++) {
+        byte m = 255;
+        for (int k = -radius; k <= radius; k++) {
+          int xx = x + k; if (xx < 0 || xx >= w) continue;
+          byte v = o[y * w + xx]; if (v < m) m = v;
+        }
+        t[y * w + x] = m;
+      }
+    }
+    for (int x = 0; x < w; x++) {
+      for (int y = 0; y < h; y++) {
+        byte m = 255;
+        for (int k = -radius; k <= radius; k++) {
+          int yy = y + k; if (yy < 0 || yy >= h) continue;
+          byte v = t[yy * w + x]; if (v < m) m = v;
+        }
+        e[y * w + x] = m;
+      }
+    }
+    // 外壁（二值）
+    byte[] s = new byte[w * h];
+    for (int k = 0; k < s.Length; k++) s[k] = (byte)(o[k] - e[k]);
+    // 3x3 均值柔化
+    for (int y = 0; y < h; y++) {
+      for (int x = 0; x < w; x++) {
+        int sum = 0, n = 0;
+        for (int dy = -1; dy <= 1; dy++) {
+          int yy = y + dy; if (yy < 0 || yy >= h) continue;
+          for (int dx = -1; dx <= 1; dx++) {
+            int xx = x + dx; if (xx < 0 || xx >= w) continue;
+            sum += s[yy * w + xx]; n++;
+          }
+        }
+        int a = sum / n;
+        int i = y * stride + x * 4;
+        if (a < 8) { px[i] = 0; px[i + 1] = 0; px[i + 2] = 0; px[i + 3] = 0; }
+        else px[i + 3] = (byte)a;
+      }
+    }
+  }
+}
+'@
 
 if (-not (Test-Path -LiteralPath $OutDir)) { New-Item -ItemType Directory -Force -Path $OutDir | Out-Null }
 
-# ── 1. 读原图并缩放到目标尺寸 ──
+# ── 1. 读原图，按标志包围盒裁正方形 ──
 $srcImg = [System.Drawing.Image]::FromFile($Source)
+$sw = $srcImg.Width; $sh = $srcImg.Height
+$srcBmp = New-Object System.Drawing.Bitmap($sw, $sh, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+$sg = [System.Drawing.Graphics]::FromImage($srcBmp)
+$sg.DrawImage($srcImg, (New-Object System.Drawing.Rectangle(0, 0, $sw, $sh)))
+$sg.Dispose()
 
-# ── 2. 染成白色图形（按亮度保留抗锯齿边缘）──
-function New-Dyed($image, $size) {
-  $bmp = New-Object System.Drawing.Bitmap($size, $size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-  $g = [System.Drawing.Graphics]::FromImage($bmp)
-  $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-  $g.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
-  $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-  $g.DrawImage($image, (New-Object System.Drawing.Rectangle(0, 0, $size, $size)))
-  $g.Dispose()
+$srect = New-Object System.Drawing.Rectangle(0, 0, $sw, $sh)
+$sd = $srcBmp.LockBits($srect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, $srcBmp.PixelFormat)
+$slen = $sd.Stride * $sh
+$sbytes = New-Object byte[] $slen
+[System.Runtime.InteropServices.Marshal]::Copy($sd.Scan0, $sbytes, 0, $slen)
+$srcBmp.UnlockBits($sd)
 
-  for ($y = 0; $y -lt $size; $y++) {
-    for ($x = 0; $x -lt $size; $x++) {
-      $px = $bmp.GetPixel($x, $y)
-      if ($px.A -eq 0) { continue }
-      $lum = (0.299 * $px.R + 0.587 * $px.G + 0.114 * $px.B) / 255.0
-      if ($lum -gt 1) { $lum = 1 }
-      $bmp.SetPixel($x, $y, [System.Drawing.Color]::FromArgb(
-          [int][math]::Round($px.A * $lum), [int][math]::Round(255 * $lum),
-          [int][math]::Round(255 * $lum), [int][math]::Round(255 * $lum)))
-    }
-  }
-  return $bmp
+$bx0 = 0; $by0 = 0; $bx1 = 0; $by1 = 0
+[ImgUtil]::BBox($sbytes, $sw, $sh, $sd.Stride, 55, [ref]$bx0, [ref]$by0, [ref]$bx1, [ref]$by1)
+$bw = $bx1 - $bx0 + 1; $bh = $by1 - $by0 + 1
+$side = [Math]::Max($bw, $bh)
+$cx = [int](($bx0 + $bx1) / 2); $cy = [int](($by0 + $by1) / 2)
+"标志包围盒: {0}x{1} at ({2},{3})  取正方形边长 {4}（原图 {5}x{6}）" -f $bw, $bh, $bx0, $by0, $side, $sw, $sh
+
+# 正方形裁口可能越界（原图顶/底边距小），越界部分填黑——黑底在镂空阈值以下，不影响
+$cropX = $cx - [int]($side / 2); $cropY = $cy - [int]($side / 2)
+$work = New-Object System.Drawing.Bitmap($Size, $Size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+$wg = [System.Drawing.Graphics]::FromImage($work)
+$wg.Clear([System.Drawing.Color]::FromArgb(0, 0, 0))
+$wg.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+$wg.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
+$wg.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+
+# 把裁口与原图求交，交到的区域才画，没交到的地方保持黑底
+$ix0 = [Math]::Max($cropX, 0); $iy0 = [Math]::Max($cropY, 0)
+$ix1 = [Math]::Min($cropX + $side, $sw); $iy1 = [Math]::Min($cropY + $side, $sh)
+if ($ix1 -gt $ix0 -and $iy1 -gt $iy0) {
+  # 注意：PowerShell 会把 New-Object 参数表里的 `-` 当成参数名，减法必须先落到变量上
+  $iw = $ix1 - $ix0
+  $ih = $iy1 - $iy0
+  $srcRect = New-Object System.Drawing.Rectangle($ix0, $iy0, $iw, $ih)
+  $k = $Size / [double]$side
+  $dx = [int][math]::Floor(($ix0 - $cropX) * $k)
+  $dy = [int][math]::Floor(($iy0 - $cropY) * $k)
+  $dw = [int][math]::Ceiling($iw * $k)
+  $dh = [int][math]::Ceiling($ih * $k)
+  $dstRect = New-Object System.Drawing.Rectangle($dx, $dy, $dw, $dh)
+  $wg.DrawImage($srcBmp, $dstRect, $srcRect, [System.Drawing.GraphicsUnit]::Pixel)
 }
+$wg.Dispose()
 
-$white256 = New-Dyed $srcImg 256
-$white256.Save("$OutDir\logo-white.png", [System.Drawing.Imaging.ImageFormat]::Png)
-$white256.Dispose()
-"  logo-white.png  白色图形（无底板）"
-
-# ── 3. 渐变圆角底板 + 白色图形 = 应用图标 ──
-try {
-  $glyph = New-Dyed $srcImg $SIZE
-  $tile = New-Object System.Drawing.Bitmap($SIZE, $SIZE, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-  $tg = [System.Drawing.Graphics]::FromImage($tile)
-  $tg.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-
-  $r = [int]($SIZE * $RADIUS)
-  $path = New-Object System.Drawing.Drawing2D.GraphicsPath
-  $path.AddArc(0, 0, $r * 2, $r * 2, 180, 90)
-  $path.AddArc($SIZE - $r * 2, 0, $r * 2, $r * 2, 270, 90)
-  $path.AddArc($SIZE - $r * 2, $SIZE - $r * 2, $r * 2, $r * 2, 0, 90)
-  $path.AddArc(0, $SIZE - $r * 2, $r * 2, $r * 2, 90, 90)
-  $path.CloseFigure()
-
-  $ptA = New-Object System.Drawing.PointF(0, 0)
-  $ptB = New-Object System.Drawing.PointF([float]$SIZE, [float]$SIZE)
-  $cA = [System.Drawing.Color]::FromArgb(255, 99, 102, 241)    # #6366f1
-  $cB = [System.Drawing.Color]::FromArgb(255, 139, 92, 246)    # #8b5cf6
-  $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush($ptA, $ptB, $cA, $cB)
-  $tg.FillPath($brush, $path)
-
-  $pad = [int]($SIZE * (1 - $INSET) / 2)
-  $w = $SIZE - $pad * 2
-  $tg.DrawImage($glyph, (New-Object System.Drawing.Rectangle($pad, $pad, $w, $w)))
-} catch {
-  "CAUGHT at line {0}: {1}" -f $_.InvocationInfo.ScriptLineNumber, $_.Exception.Message
-  "  STMT: $($_.InvocationInfo.Line.Trim())"
-  "  SIZE=$($SIZE -is [array]) r=$($r -is [array]) pad=$($pad -is [array]) glyph=$($glyph -is [array]) tile=$($tile -is [array])"
-  exit 1
+# ── 2. 镂空 ──
+$wrect = New-Object System.Drawing.Rectangle(0, 0, $Size, $Size)
+if ($DumpDir) {
+  if (-not (Test-Path -LiteralPath $DumpDir)) { New-Item -ItemType Directory -Force -Path $DumpDir | Out-Null }
+  $work.Save("$DumpDir\_crop.png", [System.Drawing.Imaging.ImageFormat]::Png)
 }
+$wd = $work.LockBits($wrect, [System.Drawing.Imaging.ImageLockMode]::ReadWrite, $work.PixelFormat)
+$wlen = $wd.Stride * $Size
+$wbytes = New-Object byte[] $wlen
+[System.Runtime.InteropServices.Marshal]::Copy($wd.Scan0, $wbytes, 0, $wlen)
+Write-Output ("  hollow: size={0} erode={1} lumOn=55" -f $Size, $Erode)
+[ImgUtil]::Hollow($wbytes, $Size, $Size, $wd.Stride, 55, $Erode)
+[System.Runtime.InteropServices.Marshal]::Copy($wbytes, 0, $wd.Scan0, $wlen)
+$work.UnlockBits($wd)
+
+$work.Save("$OutDir\logo-mark.png", [System.Drawing.Imaging.ImageFormat]::Png)
+$work.Dispose()
+"  logo-mark.png   镂空图形（透明底）"
+
+# ── 3. 深色圆角底板版（.ico 用：要经得起白/黑任务栏和 16px 小尺寸）──
+$INSET = 0.80
+$RADIUS = 0.235
+$tile = New-Object System.Drawing.Bitmap($Size, $Size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+$tg = [System.Drawing.Graphics]::FromImage($tile)
+$tg.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+$tr = [int]($Size * $RADIUS)
+$path = New-Object System.Drawing.Drawing2D.GraphicsPath
+$path.AddArc(0, 0, $tr * 2, $tr * 2, 180, 90)
+$path.AddArc($Size - $tr * 2, 0, $tr * 2, $tr * 2, 270, 90)
+$path.AddArc($Size - $tr * 2, $Size - $tr * 2, $tr * 2, $tr * 2, 0, 90)
+$path.AddArc(0, $Size - $tr * 2, $tr * 2, $tr * 2, 90, 90)
+$path.CloseFigure()
+$pg = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+  (New-Object System.Drawing.PointF(0, 0)), (New-Object System.Drawing.PointF([float]$Size, [float]$Size)),
+  [System.Drawing.Color]::FromArgb(255, 74, 32, 148),      # 中心紫
+  [System.Drawing.Color]::FromArgb(255, 8, 6, 16))         # 边角近黑
+$tg.FillPath($pg, $path)
+$pg.Dispose(); $path.Dispose()
+
+$mark = [System.Drawing.Image]::FromFile("$OutDir\logo-mark.png")
+$pad = [int]($Size * (1 - $INSET) / 2)
+$mw = $Size - $pad * 2
+$tg.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+$tg.DrawImage($mark, (New-Object System.Drawing.Rectangle($pad, $pad, $mw, $mw)))
 $tg.Dispose()
-$glyph.Dispose()
 $tile.Save("$OutDir\logo-tile.png", [System.Drawing.Imaging.ImageFormat]::Png)
-$tile.Dispose()
-"  logo-tile.png   渐变底板 + 白图形"
+$mark.Dispose(); $tile.Dispose()
+"  logo-tile.png   镂空 + 深色圆角底"
 
-$srcImg.Dispose()
+$srcImg.Dispose(); $srcBmp.Dispose()
 
 Get-ChildItem -LiteralPath $OutDir -Filter 'logo-*.png' |
   ForEach-Object { "  {0,-18} {1,8:N1} KB" -f $_.Name, ($_.Length / 1KB) }

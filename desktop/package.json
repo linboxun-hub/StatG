@@ -2,7 +2,7 @@
   "name": "stata-assistant-desktop",
   "version": "1.0.0",
   "private": true,
-  "description": "Stata 实证数据分析助手（桌面版）",
+  "description": "StatG 实证数据分析助手（桌面版）",
   "main": "main.js",
   "author": "cc园区",
   "license": "MIT",
@@ -16,8 +16,8 @@
     "electron-builder": "^26.0.12"
   },
   "build": {
-    "appId": "com.cc.stata-assistant",
-    "productName": "Stata助手",
+    "appId": "com.cc.statg",
+    "productName": "StatG",
     "directories": { "output": "release" },
     "files": ["main.js", "preload.js", "build/**"],
     "extraResources": [

@@ -1,4 +1,4 @@
-// Stata 助手（桌面版）主进程
+// StatG（桌面版）主进程
 //
 // 做的事：拉起本地 FastAPI 后端 → 起一个「静态前端 + /api 反向代理」的小服务器 →
 // 用 BrowserWindow 打开。使用者双击图标即可，不用开终端、不用跑 npm run dev。
@@ -221,7 +221,7 @@ function createWindow() {
     icon: fs.existsSync(ICON) ? ICON : undefined,
     backgroundColor: '#0f172a',
     autoHideMenuBar: true,
-    title: 'Stata 助手',
+    title: 'StatG',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
