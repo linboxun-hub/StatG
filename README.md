@@ -68,7 +68,7 @@ set ELECTRON_CACHE=%CD%\.electron-cache
 
 cd frontend && npm run build
 
-# 3. 先把 build.publish 里的 owner 改成你的 GitHub 用户名
+# 3. 打包（owner 已在 build.publish 里配成 linboxun-hub）
 cd desktop && npm run dist
 
 # 4. 提交并打 tag（tag 必须是 v<版本>，程序靠它比版本号）
@@ -78,6 +78,9 @@ git tag v1.1.0 && git push origin main --tags
 # 5. 在 GitHub 上建 Release：选刚push的 tag，标题写 v1.1.0，
 #    把 release/StatG Setup 1.1.0.exe 作为 asset 传上去，正文贴 CHANGELOG
 ```
+
+仓库地址已经配在 `desktop/package.json` 的 `build.publish` 里
+（<https://github.com/linboxun-hub/StatG>），程序默认就去那儿检查更新。
 
 想一条命令直接发布（会自动建 Release 并上传 asset）：
 

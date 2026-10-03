@@ -30,4 +30,4 @@
 - esttab 风格多模型对照表、DID/IV 面板、异质性系数图与分组回归表、中介/调节效应。
 - Electron 桌面打包，内置本地后端，双击即用。
 
-[1.1.0]: https://github.com/YOUR_GITHUB_USERNAME/StatG/releases/tag/v1.1.0
+[1.1.0]: https://github.com/linboxun-hub/StatG/releases/tag/v1.1.0
