@@ -156,7 +156,7 @@ export default function Layout() {
           height: 84, display: 'flex', alignItems: 'center', gap: 12, padding: '0 20px',
           borderBottom: '1px solid #1e293b', flexShrink: 0,
         }}>
-          <img src="/logo-mark.png" alt="StatG" style={{ width: 52, height: 52, borderRadius: 11, display: 'block' }} />
+          <img src="/logo-icon.png" alt="StatG" style={{ width: 52, height: 52, borderRadius: 12, display: 'block' }} />
           <div>
             <div style={{ color: '#fff', fontWeight: 600, fontSize: 16, lineHeight: 1.1 }}>StatG</div>
             <div style={{ color: '#64748b', fontSize: 10, marginTop: 3 }}>实证数据分析助手</div>
