@@ -61,3 +61,7 @@ desktop/.eb-cache/
 desktop/.electron-cache/
 desktop/package-lock.json
 desktop-app-screenshot.png
+# 打包用的自带 Python 运行时（解释器 + 全部依赖，约 750MB）
+# 由 desktop/build/make_pyruntime.ps1 生成，能重新打出来，不进版本库
+desktop/python-runtime/
+desktop/build/.pyruntime-cache/

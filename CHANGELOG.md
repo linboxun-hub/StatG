@@ -4,6 +4,52 @@
 程序里的版本号只有一处来源：`desktop/package.json` 的 `version`，侧边栏底部、设置页、
 安装包文件名、.exe 都读它。
 
+## [1.2.0] - 2026-10-04
+
+### 新增
+- **安装包自带 Python 运行时**：把一份完整的 Python（解释器 + 全部后端依赖）打进
+  安装包的 `resources/python-runtime/`。**用户装完即用，不用另装 Anaconda、
+  不用 pip install 任何东西。** 主进程启动后端时优先用它，找不到才退回本机
+  Anaconda；`STATA_PYTHON` 仍然排在最前，想强制用自己的 Python 就设它。
+- **设置页显示运行环境**：版本卡片下面多一行「后端运行环境」，直接说明当前
+  用的是自带运行时还是本机哪个 Python——出问题时不用再猜。
+- **后端启动失败的提示能看了**：以前只有一句「请检查 Python 环境」。现在会把
+  用的是哪个解释器、自带运行时有没有用上、后端最后报的错一起列出来。
+
+### 修复
+- matplotlib 的字体缓存要写用户目录，程序装在 `C:\Program Files` 下会写不进去。
+  现在统一指到 `userData\mpl`。
+- Python 子进程的 stdio 是管道不是控制台，会按本地代码页（简体中文机器上是
+  GBK）编码；遇到生僻字就 `UnicodeEncodeError`。现在固定 `PYTHONIOENCODING=utf-8`。
+- **运行时打包脚本的版本号拼接错**：拿 `3.13.9` 去掉点得到 `3139`，而 CPython
+  的 `._pth` 用的是「主+次」版本 `313`。写出来的文件名 Python 根本不读，标准库
+  都加载不了，后面每一步都是没头绪的 `No module named ...`。现在改成从解出来的
+  文件里直接认 `python*._pth`，不猜。
+- **打包脚本被 pip 的警告掀翻**：PowerShell 5.1 会把原生命令写进 stderr 的每
+  一行包成 ErrorRecord，而脚本是 `$ErrorActionPreference = 'Stop'`，于是 pip
+  一句「script 装好了但不在 PATH 上」的警告就能让脚本中途终止。现在所有原生命
+  令统一走一个只认退出码的封装。
+- **误判 DoubleML 打不进运行时**：查 wheel 时只筛了 `win_amd64`，而 DoubleML
+  发的是 `py3-none-any`（纯 Python），Windows 上装得上。现在由脚本的 `-Extras`
+  单独装，原因只是它的依赖太重（plotly 50MB、mypy、optuna、sqlalchemy……70MB
+  以上），不想让用不到 DML 的人也背着。
+
+### 调整
+- 依赖锁版本，拆成两份：`backend/requirements.txt` 给开发时用；
+  `desktop/build/requirements-runtime.txt` 随安装包走。
+- `requirements-runtime.txt` 里的 uvicorn 不带 `[standard]`：那个 extra 会拉
+  uvloop，PyPI 上没有 Windows 预编译包，只能找 MSVC 源码编译。
+- 运行时默认瘦身：删掉各家包的 `tests/` 目录和编译时带的 `.lib`/`.exp`/`.pdb`
+  调试符号，一共省下约 130MB。
+
+### 已知限制
+- `__pycache__` 保留没删，占了约 200MB。删了能让安装包小一些，但首次启动要多
+  花约 7 秒编译；程序装在 `C:\Program Files` 下那个目录默认只读，意味着每次都
+  慢这 7 秒。只打 portable 版可以用 `-NoPyCache` 关掉。
+- llvmlite 单独 115MB（numba 的依赖，numba 又是 StatsPAI 声明的依赖）。
+  `import statspai` 时它并不加载，但没敢删——删了等于赌 StatsPAI 的哪条代码
+  路径会踩到它。
+
 ## [1.1.0] - 2026-10-04
 
 ### 新增
@@ -30,4 +76,5 @@
 - esttab 风格多模型对照表、DID/IV 面板、异质性系数图与分组回归表、中介/调节效应。
 - Electron 桌面打包，内置本地后端，双击即用。
 
+[1.2.0]: https://github.com/linboxun-hub/StatG/releases/tag/v1.2.0
 [1.1.0]: https://github.com/linboxun-hub/StatG/releases/tag/v1.1.0

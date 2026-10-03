@@ -113,6 +113,15 @@ function UpdateCard() {
           {r && r.ok && !r.hasUpdate && <Tag color="green">已是最新</Tag>}
         </Space>
 
+        {info.python && (
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            后端运行环境：
+            {info.pythonBundled
+              ? '程序自带的 Python 运行时（依赖已打包，不用另装 Anaconda）'
+              : `本机 Python —— ${info.python}`}
+          </Text>
+        )}
+
         {!updateAPI.isDesktop && (
           <Alert type="info" showIcon
             message="现在跑的是网页开发版"

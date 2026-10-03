@@ -1,0 +1,56 @@
+# 打进安装包的 Python 运行时依赖。
+#
+# 和 backend/requirements.txt 的分工：
+#   backend/requirements.txt  给开发者在自己机器上跑网页版用，图全、图新
+#   本文件                    锁死版本，随安装包一起发给用户
+#
+# 三处刻意和 backend/requirements.txt 不一样：
+#   1. uvicorn 不带 [standard] —— 那个 extra 会拉 uvloop，PyPI 上没有 Windows
+#      预编译包，pip 只能找 MSVC 从源码编。程序启动后端用的是
+#      `python -m uvicorn`，不带 extra 一样跑
+#   2. 全部锁到具体版本，保证打包环境和开发环境跑的是同一套代码路径
+#   3. 不含 DoubleML —— 见文件末尾
+
+# --- Web 服务 ---
+fastapi==0.141.1
+uvicorn==0.52.1
+python-multipart==0.0.32
+
+# --- 数值 / 统计内核 ---
+numpy==2.3.5
+pandas==2.3.3
+scipy==1.16.3
+statsmodels==0.14.5
+linearmodels==7.0
+
+# --- 读写 ---
+openpyxl==3.1.5
+xlrd==2.0.2
+pyreadstat==1.3.5
+
+# --- 画图（异质性系数图、拟合图）---
+matplotlib==3.10.6
+
+# --- 机器学习（Double ML 的学习器）---
+scikit-learn==1.7.2
+lightgbm==4.7.0
+
+# --- 统计引擎本身 ---
+StatsPAI==1.30.1
+
+# --- 导出 Word / Excel / PDF ---
+python-docx==1.2.0
+PyMuPDF==1.27.2.3
+pdfplumber==0.11.9
+
+# --- 知识库抓取、AI 接口 ---
+httpx==0.28.1
+requests==2.32.5
+beautifulsoup4==4.13.5
+
+# DoubleML 不放在这个清单里，由 make_pyruntime.ps1 的 -Extras 单独装。
+# 它本身是 py3-none-any 的纯 Python 包，Windows 上装得上（之前查 wheel 时只
+# 筛了 win_amd64，误判成没有 Windows 包）。单独装是因为它的依赖太重：plotly
+# 50MB、seaborn、optuna、sqlalchemy、alembic、mypy 15MB，加起来 70MB 以上，
+# 而 DML 只是众多分析方法里的一个，用不到的人白背这些。
+# _dml.py 是懒加载的，万一这步失败，只有 DML 那条分支会提示未安装。

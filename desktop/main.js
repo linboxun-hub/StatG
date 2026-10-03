@@ -4,7 +4,8 @@
 // 用 BrowserWindow 打开。使用者双击图标即可，不用开终端、不用跑 npm run dev。
 //
 // 端口：UI 5180（前端），API 8000（后端）。两个都可用环境变量覆盖。
-// 后端解释器：依次找 STATA_PYTHON、本机 Anaconda、PATH 上的 python。
+// 后端解释器：依次找 STATA_PYTHON、安装包自带的 Python 运行时、本机 Anaconda、
+// PATH 上的 python。自带那份连依赖一起打包，装完即用，不用另装 Anaconda。
 
 const { app, BrowserWindow, shell, ipcMain } = require('electron')
 const { spawn, exec } = require('child_process')
@@ -24,6 +25,7 @@ const LOADING = path.join(__dirname, 'build', 'loading.html')
 let backendProc = null
 let uiServer = null
 let win = null
+let backendErr = ''      // 后端最后一段报错，启动失败时拿给用户看
 
 function log() { console.log('[desktop]', ...arguments) }
 
@@ -46,8 +48,18 @@ function backendDir() {
   return cands.find((p) => fs.existsSync(path.join(p, 'main.py'))) || null
 }
 
+// 安装包里自带的那份 Python：解释器加全部依赖，用户机器上什么都不用装。
+// 见 build/requirements-runtime.txt 和 build/make_pyruntime.ps1。
+function bundledPython() {
+  const p = path.join(process.resourcesPath || '', 'python-runtime', 'python.exe')
+  return fs.existsSync(p) ? p : null
+}
+
+// 优先用自带的那份——那是唯一确定齐全的。用户自己的环境留给开发时用：
+// STATA_PYTHON 仍然排在最前，想换解释器设它就行。
 const PY_CANDIDATES = [
   process.env.STATA_PYTHON,
+  bundledPython(),
   'D:\\Anaconda\\anaconda\\python.exe',
   'D:\\Anaconda3\\python.exe',
   'C:\\ProgramData\\Anaconda3\\python.exe',
@@ -108,12 +120,24 @@ async function ensureBackend() {
     return false
   }
   const py = pickPython()
-  log('starting backend:', py, '| cwd:', bdir)
+  // matplotlib 要把字体缓存写到用户目录。程序装在 C:\Program Files 下时那份缓存
+  // 可能写不进去（只读或要管理员权限），所以统一指到 userData，和窗口状态、
+  // 更新记录放在一处。PYTHONIOENCODING 同理——子进程的 stdio 是管道不是控制台，
+  // Python 会按本地代码页编码（简体中文机器上是 GBK），日志里遇到生僻字就
+  // UnicodeEncodeError 崩掉。
+  const mplDir = path.join(app.getPath('userData'), 'mpl')
+  try { fs.mkdirSync(mplDir, { recursive: true }) } catch (e) {}
+  log('starting backend:', py, '| cwd:', bdir,
+      '| 自带运行时:', bundledPython() ? '是' : '否')
   backendProc = spawn(py,
     ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', String(API_PORT)],
-    { cwd: bdir, windowsHide: true })
+    { cwd: bdir, windowsHide: true, env: { ...process.env, MPLCONFIGDIR: mplDir, PYTHONIOENCODING: 'utf-8' } })
   backendProc.stdout.on('data', (d) => log('[uvicorn]', String(d).trim()))
-  backendProc.stderr.on('data', (d) => log('[uvicorn!]', String(d).trim()))
+  backendProc.stderr.on('data', (d) => {
+    const s = String(d).trim()
+    log('[uvicorn!]', s)
+    backendErr = (backendErr ? backendErr + '\n' + s : s).slice(-1500)
+  })
   backendProc.on('exit', (code) => { log('backend exited:', code); backendProc = null })
 
   const ok = await waitBackendReady(120000)
@@ -402,7 +426,19 @@ if (!app.requestSingleInstanceLock()) {
       win.loadFile(LOADING)   // 启动页（带 logo 与进度提示）
     }
     const ok = await ensureBackend()
-    if (!ok) dialogError('后端启动失败', '没能拉起本地后端服务，请检查 Python 环境后重试。')
+    if (!ok) {
+      // 以前这里只有一句「请检查 Python 环境」，等于让用户自己猜。现在把
+      // 用的是哪个解释器、有没有用上自带运行时、后端最后报了什么，都说清楚。
+      const py = pickPython()
+      const bundled = bundledPython()
+      dialogError('后端启动失败',
+        '没能拉起本地后端服务。\n\n' +
+        `解释器：${py}\n` +
+        `自带运行时：${bundled ? '已用上' : '没找到（安装可能不完整，重装试试）'}\n\n` +
+        (backendErr ? `后端最后的输出：\n${backendErr}\n\n` : '') +
+        '如果想改用自己装的 Python，设一个环境变量 STATA_PYTHON 指向它的 python.exe，' +
+        '那份里面需要有 backend/requirements.txt 里的依赖。')
+    }
     if (win) win.loadURL(`http://127.0.0.1:${UI_PORT}/`)
 
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
@@ -416,6 +452,9 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle('app:info', () => ({
     ok: true, version: app.getVersion(), platform: process.platform, arch: process.arch,
     repo: currentRepo(), electron: process.versions.electron,
+    // 「运行环境」那一栏用：让用户一眼看出后端到底是哪个 Python 在跑
+    python: pickPython(),
+    pythonBundled: !!bundledPython(),
   }))
 
   ipcMain.handle('app:check-update', async () => checkUpdate())

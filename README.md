@@ -11,7 +11,8 @@ Stata/StatsPAI 的图形化封装：把面板数据清洗、回归前统计描�
 ```
 frontend/       React 前端；public/ 放 logo，dist/ 是构建产物
 backend/        FastAPI 后端；services/ 是各分析方法
-desktop/        Electron 打包；build/ 放图标与启动页；release/ 是打包结果
+desktop/        Electron 打包；build/ 放图标、启动页和依赖打包脚本；release/ 是打包结果
+desktop/python-runtime/   打包用的自带 Python 运行时（生成物，不进 git）
 docs/           帮助文档内容
 CHANGELOG.md    版本变更记录
 ```
@@ -27,6 +28,9 @@ cd frontend && npm install && npm run dev
 ```
 
 后端依赖：`fastapi uvicorn statsmodels linearmodels doubleml matplotlib pandas numpy`。
+```bash
+cd backend && pip install -r requirements.txt
+```
 
 ## 打桌面版安装包
 
@@ -43,9 +47,35 @@ npm run dist                          # 产出 release/StatG Setup <版本>.exe
 | `release/StatG Setup <版本>.exe` | 安装版，给别人装 |
 | `release/win-unpacked/StatG.exe` | 免安装，双击即用 |
 
-注意：**后端依赖没有打进安装包**，程序会依次找 `STATA_PYTHON` 环境变量 →
-`D:\Anaconda\anaconda\python.exe` → PATH 上的 `python`。发给没装这些依赖的机器，
-还得做 PyInstaller 或随包带便携版 Python。
+### 自带 Python 运行时
+
+安装包里现在带了一份完整的 Python：解释器加全部依赖，装在
+`resources/python-runtime/`。**别人拿到安装包装完就能用，不用另装 Anaconda、
+不用 pip install 任何东西。** 主进程启动后端时优先用它，找不到才退回本机
+Anaconda（`STATA_PYTHON` 仍然排在最前，想强制用自己的 Python 就设它）。
+
+重新生成这份运行时：
+
+```bash
+cd desktop && npm run runtime         # 等于跑 desktop/build/make_pyruntime.ps1
+```
+
+它做的事：下载 CPython 嵌入式发行版（约 11MB，无安装程序、不写注册表、整个
+目录原样拷走就能跑）→ 引导 pip → 按
+`build/requirements-runtime.txt` 装依赖 → 逐模块 import 验一遍。产物约 750MB，
+**已经加进 .gitignore**，所以打包前必须先跑一次，否则 `extraResources` 会报缺
+`python-runtime`。
+
+运行时要联网拉 PyPI。国内网络可以在脚本里换 index：
+
+```bash
+powershell -File desktop\build\make_pyruntime.ps1 -IndexUrl https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+依赖清单刻意锁了版本，且和 `backend/requirements.txt` 有几处不同，理由都写在
+`build/requirements-runtime.txt` 的注释里。**DoubleML 是单独装的**（脚本的
+`-Extras`）：它会拖进 plotly、seaborn、optuna、sqlalchemy、mypy 一共 70MB 以上，
+而 DML 只是众多分析方法里的一个，不值得让用不到的人也背着。
 
 Windows 上如果 `npm run dist` 卡在下载 electron，是因为 GitHub 连不上，挂镜像：
 
@@ -68,15 +98,19 @@ set ELECTRON_CACHE=%CD%\.electron-cache
 
 cd frontend && npm run build
 
-# 3. 打包（owner 已在 build.publish 里配成 linboxun-hub）
+# 3. 自带 Python 运行时（约 500MB，要联网拉 PyPI）。
+#    已经生成过、requirements 没改的话，这一步会自动重打，不想等可以跳过
+cd desktop && npm run runtime
+
+# 4. 打包（owner 已在 build.publish 里配成 linboxun-hub）
 cd desktop && npm run dist
 
-# 4. 提交并打 tag（tag 必须是 v<版本>，程序靠它比版本号）
-git add -A && git commit -m "release: v1.1.0"
-git tag v1.1.0 && git push origin main --tags
+# 5. 提交并打 tag（tag 必须是 v<版本>，程序靠它比版本号）
+git add -A && git commit -m "release: v1.2.0"
+git tag v1.2.0 && git push origin main --tags
 
-# 5. 在 GitHub 上建 Release：选刚push的 tag，标题写 v1.1.0，
-#    把 release/StatG Setup 1.1.0.exe 作为 asset 传上去，正文贴 CHANGELOG
+# 6. 在 GitHub 上建 Release：选刚 push 的 tag，标题写 v1.2.0，
+#    把 release/StatG Setup 1.2.0.exe 作为 asset 传上去，正文贴 CHANGELOG
 ```
 
 仓库地址已经配在 `desktop/package.json` 的 `build.publish` 里
@@ -110,8 +144,18 @@ powershell -File desktop\build\make_icon.ps1 frontend\public\logo-icon.png deskt
 `make_logo.ps1` 会做三件事：按包围盒裁正方形、按饱和度把像素分流重新上色
 （白/紫各一条 alpha 曲线）、把紫圈磨细。默认参数就是当前效果，`-Thin` 调圈粗细。
 
+**当前这份 logo 不是它做的**，是 `crop_logo.ps1`：只把原图裁成正圆（外加把暗部
+提白），不动原图的颜色。要的就是原样：
+
+```bash
+powershell -File desktop\build\crop_logo.ps1 -Source <原图> -OutDir frontend\public
+```
+
 ## 已知问题
 
-- 后端依赖未打包（见上）
 - 只有 Windows 安装包；mac 要另配 `mac` target
+- 安装包里带 Python 运行时，体积从约 110MB 涨到约 400MB
+- `__pycache__` 保留没删：那一份是 200MB，但删了首次启动要多花约 7 秒编译，
+  而程序装在 `C:\Program Files` 下默认是只读的，意味着每次都慢这 7 秒。
+  只打 portable 版的话可以用 `npm run runtime -- -NoPyCache`
 - 单实例锁：重复双击只开一个窗口，不会起两个后端
