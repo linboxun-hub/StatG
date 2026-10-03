@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
+import { updateAPI } from '../api/update'
+import { useUpdate } from '../hooks/useUpdate'
 import { Layout as AntLayout, Menu, Select, Tag } from 'antd'
 import GlobalAIChat from './GlobalAIChat'
 import { projectAPI } from '../api'
@@ -122,6 +124,16 @@ export default function Layout() {
   }, [activeParent])
   const [projects, setProjects] = useState([])
   const [currentProjectId, setCurrentProjectId] = useState(null)
+  // 版本号与「有新版本」提示：挂一次 info 加载和后台通知即可，设置页里才有完整交互
+  const upd = useUpdate()
+  const updInfo = upd.info
+  const updHas = !!(upd.result && upd.result.ok && upd.result.hasUpdate)
+  useEffect(() => {
+    if (updateAPI.isDesktop) {
+      updateAPI.loadInfo()
+      updateAPI.onAvailable(() => {})
+    }
+  }, [])
   // 切页时把内容区滚回顶部：侧边栏不重建，滚动位置不会自己归位
   const contentRef = useRef(null)
   useEffect(() => {
@@ -147,9 +159,10 @@ export default function Layout() {
 
   return (
     <AntLayout style={{ height: '100vh', overflow: 'hidden' }}>
-      {/* 侧边栏钉死在左边，只有它自己内部滚动，不跟着内容区跑 */}
-      <Sider width={240} className="sider-scroll" style={{
-        background: '#0f172a', overflow: 'hidden auto', overscrollBehavior: 'contain', flexShrink: 0,
+      {/* 侧边栏钉死在左边：Sider 本身不滚，只有菜单那一块滚，页脚才能留在最底下 */}
+      <Sider width={240} style={{
+        background: '#0f172a', display: 'flex', flexDirection: 'column',
+        overflow: 'hidden', flexShrink: 0,
       }}>
         {/* Logo */}
         <div style={{
@@ -182,17 +195,40 @@ export default function Layout() {
           </div>
         </div>
 
-        {/* 导航菜单 */}
-        <Menu
-          mode="inline"
-          selectedKeys={[currentKey]}
-          openKeys={openKeys}
-          onOpenChange={setOpenKeys}
-          items={menuItems}
-          onClick={({ key }) => navigate(key)}
-          style={{ background: 'transparent', border: 'none', color: '#94a3b8' }}
-          theme="dark"
-        />
+        {/* 导航菜单：这一块才是唯一会滚的区域 */}
+        <div className="sider-scroll" style={{
+          flex: '1 1 auto', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain',
+        }}>
+          <Menu
+            mode="inline"
+            selectedKeys={[currentKey]}
+            openKeys={openKeys}
+            onOpenChange={setOpenKeys}
+            items={menuItems}
+            onClick={({ key }) => navigate(key)}
+            style={{ background: 'transparent', border: 'none', color: '#94a3b8' }}
+            theme="dark"
+          />
+        </div>
+
+        {/* 版本号：有新版本时给个小点，进去「AI 设置 · 版本与更新」能看详情 */}
+        <div style={{
+          marginTop: 'auto', padding: '10px 20px 14px', borderTop: '1px solid #1e293b',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
+        }}>
+          <span style={{ fontSize: 11, color: '#475569' }}>
+            StatG{updInfo?.version ? ` v${updInfo.version}` : ''}
+          </span>
+          {updHas && (
+            <span
+              onClick={() => navigate('/settings')}
+              style={{ fontSize: 10, color: '#a78bfa', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: 3, background: '#a78bfa', display: 'inline-block' }} />
+              有新版本
+            </span>
+          )}
+        </div>
       </Sider>
       <AntLayout style={{ height: '100%', overflow: 'hidden', minWidth: 0 }}>
         <Header style={{

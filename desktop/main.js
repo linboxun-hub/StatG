@@ -6,9 +6,10 @@
 // 端口：UI 5180（前端），API 8000（后端）。两个都可用环境变量覆盖。
 // 后端解释器：依次找 STATA_PYTHON、本机 Anaconda、PATH 上的 python。
 
-const { app, BrowserWindow, shell } = require('electron')
+const { app, BrowserWindow, shell, ipcMain } = require('electron')
 const { spawn, exec } = require('child_process')
 const http = require('http')
+const https = require('https')
 const fs = require('fs')
 const path = require('path')
 
@@ -192,6 +193,141 @@ function startUiServer() {
   })
 }
 
+// ── 版本与更新 ──
+// 发布流程：改 package.json 的 version → npm run dist → 在 GitHub 上建一个 tag 为
+// v<version> 的 Release，把安装包作为 asset 传上去。程序这边查
+// /repos/<owner>/<repo>/releases/latest，比版本号，告诉用户要不要更新。
+//
+// 仓库地址按这个优先级找：用户 Data/update.json 里手填的 → 环境变量 STATG_REPO
+// → package.json 的 build.publish。前两级都没有、或者还是占位符，就告诉用户去填。
+const PKG = require('./package.json')
+const REPO_PLACEHOLDER = 'YOUR_GITHUB_USERNAME'
+const updateStateFile = () => path.join(app.getPath('userData'), 'update.json')
+const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000   // 自动检查的最短间隔，别每次开都去打 GitHub
+
+function currentRepo() {
+  try {
+    const j = JSON.parse(fs.readFileSync(updateStateFile(), 'utf8'))
+    if (j.repo) return String(j.repo).trim()
+  } catch (e) {}
+  if (process.env.STATG_REPO) return String(process.env.STATG_REPO).trim()
+  const p = (PKG.build && PKG.build.publish && PKG.build.publish[0]) || {}
+  if (p.owner && p.repo && p.owner !== REPO_PLACEHOLDER) return `${p.owner}/${p.repo}`
+  return ''
+}
+
+function parseVer(v) {
+  const m = String(v || '').replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)/)
+  return m ? [+m[1], +m[2], +m[3]] : null
+}
+function isNewer(remote, local) {
+  const a = parseVer(remote), b = parseVer(local)
+  if (!a || !b) return false
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i]
+  return false
+}
+
+// GitHub API 要求带 User-Agent，否则直接 403；assets 会 302 到别的域名，要跟着跳
+function httpsGetJson(url, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, {
+      headers: { 'User-Agent': 'StatG-Updater', 'Accept': 'application/vnd.github+json' },
+      timeout: timeoutMs,
+    }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume()
+        return httpsGetJson(res.headers.location, timeoutMs).then(resolve, reject)
+      }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`GitHub 返回 HTTP ${res.statusCode}`)) }
+      let body = ''
+      res.setEncoding('utf8')
+      res.on('data', (d) => body += d)
+      res.on('end', () => { try { resolve(JSON.parse(body)) } catch (e) { reject(new Error('返回的不是 JSON')) } })
+    })
+    req.on('timeout', () => req.destroy(new Error('连接超时')))
+    req.on('error', reject)
+  })
+}
+
+async function checkUpdate() {
+  const repo = currentRepo()
+  if (!repo) {
+    return { ok: false, reason: 'no-repo', message: '还没填 GitHub 仓库。填成「用户名/仓库名」，例如 octocat/StatG。' }
+  }
+  try {
+    const rel = await httpsGetJson(`https://api.github.com/repos/${repo}/releases/latest`, 12000)
+    const current = app.getVersion()
+    // 优先挑安装包（名字里带 Setup / 安装），否则退而求其次挑第一个 exe
+    const exes = (rel.assets || []).filter(a => /\.exe$/i.test(a.name))
+    const asset = exes.find(a => /setup|安装/i.test(a.name)) || exes[0]
+    return {
+      ok: true, repo, current,
+      latest: String(rel.tag_name || rel.name || '').replace(/^v/i, ''),
+      hasUpdate: isNewer(rel.tag_name || rel.name, current),
+      url: rel.html_url,
+      notes: String(rel.body || '').slice(0, 1500),
+      publishedAt: rel.published_at || '',
+      assetUrl: asset ? asset.browser_download_url : null,
+      assetName: asset ? asset.name : null,
+      assetSize: asset ? asset.size : null,
+    }
+  } catch (e) {
+    return { ok: false, reason: 'net', message: `检查失败：${e.message}` }
+  }
+}
+
+function downloadUpdate(url, name) {
+  return new Promise((resolve, reject) => {
+    const dir = app.getPath('downloads') || app.getPath('temp')
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    const file = path.join(dir, name || 'StatG-Setup.exe')
+    let done = 0, total = 0
+
+    const step = (u, redirects) => {
+      const mod = u.startsWith('https') ? https : http
+      mod.get(u, { headers: { 'User-Agent': 'StatG-Updater' }, timeout: 20000 }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume()
+          if (redirects > 8) return reject(new Error('跳转次数太多'))
+          return step(res.headers.location, redirects + 1)
+        }
+        if (res.statusCode !== 200) { res.resume(); return reject(new Error(`下载返回 HTTP ${res.statusCode}`)) }
+        total = Number(res.headers['content-length'] || 0)
+        const out = fs.createWriteStream(file)
+        res.on('data', (chunk) => {
+          done += chunk.length
+          if (win && !win.isDestroyed()) {
+            win.webContents.send('app:update-progress', { received: done, total, percent: total ? Math.round(done * 100 / total) : null })
+          }
+        })
+        res.pipe(out)
+        out.on('finish', () => out.close(() => resolve({ path: file, bytes: done })))
+        out.on('error', (e) => { try { fs.unlinkSync(file) } catch (e2) {}; reject(e) })
+      }).on('timeout', function () { this.destroy(new Error('下载超时')) })
+        .on('error', (e) => { try { fs.unlinkSync(file) } catch (e2) {}; reject(e) })
+    }
+    step(url, 0)
+  })
+}
+
+// 启动后悄悄查一次：6 小时内查过就不再查，查到有新版本就通知渲染进程
+async function checkUpdateOnStartup() {
+  try {
+    let last = 0
+    try { last = JSON.parse(fs.readFileSync(updateStateFile(), 'utf8')).lastChecked || 0 } catch (e) {}
+    const now = Date.now()
+    if (now - last < CHECK_INTERVAL_MS) return
+    const r = await checkUpdate()
+    try {
+      const j = JSON.parse(fs.readFileSync(updateStateFile(), 'utf8'))
+      fs.writeFileSync(updateStateFile(), JSON.stringify({ ...j, lastChecked: now }, null, 2))
+    } catch (e) {}
+    if (r.ok && r.hasUpdate && win && !win.isDestroyed()) {
+      win.webContents.send('app:update-available', r)
+    }
+  } catch (e) { log('startup update check failed:', e.message) }
+}
+
 // ── 窗口 ──
 function stateFile() { return path.join(app.getPath('userData'), 'window-state.json') }
 
@@ -270,10 +406,40 @@ if (!app.requestSingleInstanceLock()) {
     if (win) win.loadURL(`http://127.0.0.1:${UI_PORT}/`)
 
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
+    checkUpdateOnStartup()
   })
 
   app.on('window-all-closed', async () => { await stopBackend(); if (process.platform !== 'darwin') app.quit() })
   app.on('before-quit', async (e) => { e.preventDefault(); saveWindowState(); await stopBackend(); app.exit(0) })
+
+  // ── 更新相关的 IPC ──
+  ipcMain.handle('app:info', () => ({
+    ok: true, version: app.getVersion(), platform: process.platform, arch: process.arch,
+    repo: currentRepo(), electron: process.versions.electron,
+  }))
+
+  ipcMain.handle('app:check-update', async () => checkUpdate())
+
+  ipcMain.handle('app:set-repo', (e, repo) => {
+    const v = String(repo || '').trim()
+    try { fs.writeFileSync(updateStateFile(), JSON.stringify({ repo: v }, null, 2)) } catch (err) {}
+    return { ok: true, repo: v }
+  })
+
+  // 下载安装包到「下载」目录，进度通过 app:update-progress 推给渲染进程
+  ipcMain.handle('app:download-update', async (e, url, name) => {
+    if (!url) throw new Error('这个 Release 里没找到可下载的安装包')
+    return downloadUpdate(url, name || 'StatG-Setup.exe')
+  })
+
+  // 装好安装包就退出：安装程序自己会盖掉旧文件
+  ipcMain.handle('app:install-update', async (e, file) => {
+    if (!file || !fs.existsSync(file)) throw new Error('安装包不存在：' + file)
+    const p = spawn(file, [], { detached: true, stdio: 'ignore' })
+    p.unref()
+    app.quit()
+    return { ok: true }
+  })
 }
 
 function dialogError(title, content) {

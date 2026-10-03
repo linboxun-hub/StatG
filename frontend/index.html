@@ -18,6 +18,10 @@
       /* 深色侧边栏用亮一点的滚动条 */
       .sider-scroll::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, .28); background-clip: content-box; }
       .sider-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, .5); background-clip: content-box; }
+      /* antd 把 Sider 的内容包了一层 .ant-layout-sider-children，flex 必须写在这一层，
+         否则「菜单自己滚、版本号页脚钉在底部」不生效；而且 Sider 上设了 overflow:hidden
+         之后，超高的内容会被直接裁掉，页脚就看不见了 */
+      .ant-layout-sider-children { display: flex; flex-direction: column; height: 100%; }
     </style>
   </head>
   <body>
