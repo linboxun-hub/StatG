@@ -8,7 +8,8 @@ param(
   [Parameter(Mandatory = $true)][string]$OutDir,
   [int]$Size = 1024,        # 输出边长
   [double]$LumOn = 14,      # 判定「属于图形」的亮度阈值，用来量包围盒
-  [double]$DarkCut = 38     # 暗部换白的阈值：lum 低于它的像素变白；0 = 不换
+  [double]$DarkCut = 38,    # 暗部换白的阈值：lum 低于它的像素变白；0 = 不换
+  [double]$DiscLum = 45     # 量紫圈真实外沿用的阈值（紫圈≈52、圈外辉光≈31，取中）
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -50,17 +51,19 @@ public static class CircleCrop {
       }
     }
   }
-  // 把暗部换成白色。
-  // 原图圆里有一块压得很暗的区域（lum≈26，比紫圈的 52 暗一倍），
-  // 观感上是一块黑。这里按亮度切一刀：低于阈值的直接给白色，
-  // 阈值以上原样不动，于是紫圈、白柱子、白折线都保持原样。
-  // 阈值附近的像素靠原图自带的抗锯齿过渡，不会出硬边。
-  public static void DarkToWhite(byte[] px, int w, int h, int stride, double lumOn) {
+  // 把暗部换成白色，但只换 maxRatio 半径以内的。
+  // maxRatio 必须是紫圈的真实外沿：原图紫圈亮度稳定在 52，圈外还有一圈
+  // 很暗的辉光（lum≈31）。不给范围限制的话，辉光会被一起染白，
+  // 等于给紫圈描一道白边——之前就犯过这个错。
+  public static void DarkToWhite(byte[] px, int w, int h, int stride, double lumOn, double maxRatio) {
+    double cx = (w - 1) / 2.0, cy = (h - 1) / 2.0;
+    double R = Math.Min(w, h) * 0.5 * maxRatio;
     for (int y = 0; y < h; y++) {
-      int row = y * stride;
       for (int x = 0; x < w; x++) {
-        int i = row + x * 4;
+        int i = y * stride + x * 4;
         if (px[i + 3] == 0) continue;
+        double dx = x - cx, dy = y - cy;
+        if (dx * dx + dy * dy > R * R) continue;   // 圈外不管，该透明就透明
         double lum = 0.299 * px[i + 2] + 0.587 * px[i + 1] + 0.114 * px[i];
         if (lum < lumOn) { px[i] = 255; px[i + 1] = 255; px[i + 2] = 255; }
       }
@@ -124,16 +127,36 @@ if ($ix1 -gt $ix0 -and $iy1 -gt $iy0) {
 }
 $wg.Dispose()
 
-# ── 3. 裁成正圆 ──
+# ── 3. 量出紫圈的真实外沿 ──
+# 紫圈本身亮度稳定在 52，圈外还有一圈很暗的辉光（lum≈31），再往外才是纯黑底。
+# 用 DiscLum（45，取两者中线）量出来的就是紫圈外沿。这个半径同时用作两处：
+# 裁圆的边界，和「暗部提白」的作用范围。
+# 不给提白加范围，那圈暗辉光会被一起染白，等于给紫圈描一道白边；
+# 而裁圆若按画布 99% 裁，紫圈外沿到裁口之间会留下一圈不透明的黑。
 $rect = New-Object System.Drawing.Rectangle(0, 0, $Size, $Size)
+$probe = $work.Clone($rect, $work.PixelFormat)
+$dx0 = 0; $dy0 = 0; $dx1 = 0; $dy1 = 0
+$pd = $probe.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, $probe.PixelFormat)
+$plen = $pd.Stride * $Size
+$pbytes = New-Object byte[] $plen
+[System.Runtime.InteropServices.Marshal]::Copy($pd.Scan0, $pbytes, 0, $plen)
+[CircleCrop]::BBox($pbytes, $Size, $Size, $pd.Stride, $DiscLum, [ref]$dx0, [ref]$dy0, [ref]$dx1, [ref]$dy1)
+$probe.UnlockBits($pd)
+$probe.Dispose()
+$half = $Size / 2.0
+$discR = [Math]::Max($dx1 - $dx0, $dy1 - $dy0) / 2.0
+$clipRatio = $discR / $half
+"紫圈外沿: {0:N0}px（画布半边 {1:N0}px，占 {2:N0}%）" -f $discR, $half, (100.0 * $clipRatio)
+
+# ── 4. 裁成正圆 + 暗部提白 ──
 $d = $work.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadWrite, $work.PixelFormat)
 $len = $d.Stride * $Size
 $bytes = New-Object byte[] $len
 [System.Runtime.InteropServices.Marshal]::Copy($d.Scan0, $bytes, 0, $len)
-[CircleCrop]::CircleClip($bytes, $Size, $Size, $d.Stride, 0.99)
+[CircleCrop]::CircleClip($bytes, $Size, $Size, $d.Stride, $clipRatio)
 if ($DarkCut -gt 0) {
-  [CircleCrop]::DarkToWhite($bytes, $Size, $Size, $d.Stride, $DarkCut)
-  "  暗部（lum<{0}）已换成白色" -f $DarkCut
+  [CircleCrop]::DarkToWhite($bytes, $Size, $Size, $d.Stride, $DarkCut, $clipRatio)
+  "  暗部（lum<{0}）已换成白色，范围 r<{1:N0}px" -f $DarkCut, $discR
 }
 [System.Runtime.InteropServices.Marshal]::Copy($bytes, 0, $d.Scan0, $len)
 $work.UnlockBits($d)
