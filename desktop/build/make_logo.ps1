@@ -213,6 +213,43 @@ public static class ImgUtil {
         }
       }
   }
+  // 只留白色元素（柱子、折线、箭头），其余全部清掉。
+  // 原图整块盘子都是紫，只是带径向渐变：中心 lum≈52，边缘 lum≈27。
+  // 拿一个偏高的亮度阈值会把「暗下去的紫」误判成黑，看成一圈紫边包着黑洞——
+  // 之前就是这么错的。白元素 lum≈250 和紫 lum≈52 之间差 5 倍，分开很干净。
+  public static void ExtractWhite(byte[] px, int w, int h, int stride, double tOn) {
+    for (int y = 0; y < h; y++) {
+      int row = y * stride;
+      for (int x = 0; x < w; x++) {
+        int i = row + x * 4;
+        int R = px[i + 2], G = px[i + 1], B = px[i];
+        double lum = 0.299 * R + 0.587 * G + 0.114 * B;
+        double a = (lum - tOn * 0.5) / (255.0 - tOn * 0.5);
+        if (a <= 0) { px[i] = 0; px[i + 1] = 0; px[i + 2] = 0; px[i + 3] = 0; continue; }
+        if (a > 1) a = 1;
+        px[i] = 255; px[i + 1] = 255; px[i + 2] = 255;
+        px[i + 3] = (byte)Math.Round(a * 255.0);
+      }
+    }
+  }
+
+  // 圆环：内半径 rIn 到外半径 rOut 之间填 color，其余透明
+  public static void Annulus(byte[] px, int w, int h, int stride,
+                             double rInRatio, double rOutRatio,
+                             int cr, int cg, int cb) {
+    double cx = (w - 1) / 2.0, cy = (h - 1) / 2.0;
+    double rIn = Math.Min(w, h) * 0.5 * rInRatio;
+    double rOut = Math.Min(w, h) * 0.5 * rOutRatio;
+    for (int y = 0; y < h; y++) {
+      for (int x = 0; x < w; x++) {
+        double dx = x - cx, dy = y - cy;
+        double d = Math.Sqrt(dx * dx + dy * dy);
+        int i = y * stride + x * 4;
+        if (d < rIn || d > rOut) { px[i] = 0; px[i + 1] = 0; px[i + 2] = 0; px[i + 3] = 0; continue; }
+        px[i] = (byte)cb; px[i + 1] = (byte)cg; px[i + 2] = (byte)cr; px[i + 3] = 255;
+      }
+    }
+  }
 }
 '@
 
@@ -285,40 +322,49 @@ function Invoke-Pixels($bmp, [scriptblock]$op) {
   $bmp.UnlockBits($d)
 }
 
-# 圈的外半径：以中心为圆心，找亮度 >= 48 的像素（也就是圈的实心本体）离中心最远的距离
+# 整块盘子都是紫（带径向渐变：中心 lum≈52、边缘 lum≈27），白元素 lum≈250。
+# 两者差 5 倍，所以：低阈值量出盘子的外缘，高阈值把白色元素单独提出来。
 $probe = $work.Clone($cloneRect, $work.PixelFormat)
-$ringR = 0
-Invoke-Pixels $probe { param($w, $h, $s, $b) $script:ringR = [ImgUtil]::Radius($b, $w, $h, $s, 48) }
+$discR = 0
+Invoke-Pixels $probe { param($w, $h, $s, $b) $script:discR = [ImgUtil]::Radius($b, $w, $h, $s, 14) }
 $probe.Dispose()
 $half = $Size / 2.0
-"圈外半径: {0:N0}px（画布半边 {1:N0}px，占 {2:N0}%）" -f $ringR, $half, (100.0 * $ringR / $half)
+"盘子外缘半径: {0:N0}px（画布半边 {1:N0}px，占 {2:N0}%）" -f $discR, $half, (100.0 * $discR / $half)
 
-# 重新上色：白→纯白，紫→深品牌紫，#7C3AED（比之前的浅薰衣草深，色相 258° 是正紫）
-Invoke-Pixels $work { param($w, $h, $s, $b) [ImgUtil]::Recolor($b, $w, $h, $s, 36, 52, 124, 58, 237, 90, 255, 255, 255, 255) }
+# 白色元素（柱子、折线、箭头）单独一层
+$white = $work.Clone($cloneRect, $work.PixelFormat)
+Invoke-Pixels $white { param($w, $h, $s, $b) [ImgUtil]::ExtractWhite($b, $w, $h, $s, 150) }
 
-# 圈磨细（只动紫像素，白柱白线不动）
-if ($Thin -gt 0) {
-  Invoke-Pixels $work { param($w, $h, $s, $b) [ImgUtil]::ThinViolet($b, $w, $h, $s, $Thin) }
-  "  圈磨细: {0}px（原 142px 左右）" -f $Thin
-}
+# ── 3. 拼图标：亮紫内盘 + 深紫外圈 + 白色图表 ──
+# 参考样式是双色：外圈明显深一档，内盘亮一档，白柱子白折线浮在上面。
+# 单色盘会糊成一坨。圈的宽度取半径的 14%，是从参考图上量的比例。
+$InR = 124; $InG = 58; $InB = 237      # 内盘亮紫 #7C3AED
+$RingR = 76; $RingG = 29; $RingB = 149 # 外圈深紫 #4C1D95
+$RingFrac = 0.14                       # 圈宽占半径的比例
 
-# ── 3. 实心紫盘 + 白色图表（对齐 GitHub 头像的样式）──
-# 原图是「紫圈 + 纯黑内心」，直接当图标会看见一圈亮边包着一块黑洞。
-# 头像是把内心也填成同一个紫，于是整个圆是一个实心紫盘，白柱子白折线浮在上面——
-# 这就是要的效果。圆盘半径取圈的实测外半径，边缘正好收在原圈的边界上。
-$VioletR = 124; $VioletG = 58; $VioletB = 237      # #7C3AED，和圈的紫同一个色
+$discRatio = $discR / $half
+$ringWidthPx = $RingFrac * $discR
+$ringInPx = $discR - $ringWidthPx
+
 $icon = New-Object System.Drawing.Bitmap($Size, $Size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-$ratio = $ringR / $half
-Invoke-Pixels $icon { param($w, $h, $s, $b) [ImgUtil]::Disc($b, $w, $h, $s, $script:VioletR, $script:VioletG, $script:VioletB, $script:VioletR, $script:VioletG, $script:VioletB, $script:ratio) }
+# 1) 整盘铺亮紫
+Invoke-Pixels $icon { param($w, $h, $s, $b) [ImgUtil]::Disc($b, $w, $h, $s, $script:InR, $script:InG, $script:InB, $script:InR, $script:InG, $script:InB, $script:discRatio) }
+# 2) 外圈那一环压成深紫
+$ringInRatio = $ringInPx / $half
+Invoke-Pixels $icon { param($w, $h, $s, $b) [ImgUtil]::Annulus($b, $w, $h, $s, $script:ringInRatio, $script:discRatio, $script:RingR, $script:RingG, $script:RingB) }
+# 3) 白色图表浮最上层
 $ig = [System.Drawing.Graphics]::FromImage($icon)
 $ig.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
 $ig.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
 $ig.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-$ig.DrawImage($work, $cloneRect)
+$ig.DrawImage($white, $cloneRect)
 $ig.Dispose()
+"  内盘 #{0:X2}{1:X2}{2:X2} → 外圈 #{3:X2}{4:X2}{5:X2}（圈宽 {6:N0}px / 半径 {7:N0}px = {8:N0}%）" -f `
+  $InR, $InG, $InB, $RingR, $RingG, $RingB, $ringWidthPx, $discR, (100.0 * $RingFrac)
+
 $icon.Save("$OutDir\logo-icon.png", [System.Drawing.Imaging.ImageFormat]::Png)
 $icon.Dispose()
-"  logo-icon.png   实心紫盘 + 白图表（侧边栏 52px / 启动页 200px / .ico 共用）"
+"  logo-icon.png   亮紫内盘 + 深紫外圈 + 白图表（侧边栏 52px / 启动页 200px / .ico 共用）"
 
 $work.Dispose()
 $srcImg.Dispose(); $srcBmp.Dispose()
