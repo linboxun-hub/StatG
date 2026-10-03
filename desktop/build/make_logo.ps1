@@ -15,9 +15,11 @@ param(
   [Parameter(Mandatory = $true)][string]$Source,
   [Parameter(Mandatory = $true)][string]$OutDir,
   [int]$Size = 1024,     # 工作分辨率：越大越锐利（侧边栏 52px / 启动页 200px / ico 最大 256px）
-  [int]$Thin = 22,         # 把紫圈磨细多少像素（只动紫像素，白柱白线不动）
-  [string]$DumpDir = '',  # 给了就把镂空前的裁切图存到这里（调试用）
-  [double]$Pad = 0.05      # 裁切时在标志外围留的白，用来容纳原图自带的柔光
+  [string]$DumpDir = '',  # 给了就把裁切图存到这里（调试用）
+  [double]$Pad = 0.05,     # 裁切时在标志外围留的白，用来容纳原图自带的柔光
+  [string]$InnerHex = '7C3AED',   # 内盘亮紫
+  [string]$RingHex  = '4C1D95',   # 外圈深紫
+  [double]$RingFrac = 0.14        # 圈宽占半径的比例
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -337,10 +339,13 @@ Invoke-Pixels $white { param($w, $h, $s, $b) [ImgUtil]::ExtractWhite($b, $w, $h,
 
 # ── 3. 拼图标：亮紫内盘 + 深紫外圈 + 白色图表 ──
 # 参考样式是双色：外圈明显深一档，内盘亮一档，白柱子白折线浮在上面。
-# 单色盘会糊成一坨。圈的宽度取半径的 14%，是从参考图上量的比例。
-$InR = 124; $InG = 58; $InB = 237      # 内盘亮紫 #7C3AED
-$RingR = 76; $RingG = 29; $RingB = 149 # 外圈深紫 #4C1D95
-$RingFrac = 0.14                       # 圈宽占半径的比例
+# 单色盘会糊成一坨。圈宽和两个紫色都能从命令行覆盖，方便做对照预览。
+function FromHex($h) {
+  $h = $h.TrimStart('#')
+  return [Convert]::ToInt32($h.Substring(0, 2), 16), [Convert]::ToInt32($h.Substring(2, 2), 16), [Convert]::ToInt32($h.Substring(4, 2), 16)
+}
+$InR, $InG, $InB = FromHex $InnerHex
+$RingR, $RingG, $RingB = FromHex $RingHex
 
 $discRatio = $discR / $half
 $ringWidthPx = $RingFrac * $discR
