@@ -1,0 +1,53 @@
+# deps: reproducible from package.json / requirements.txt
+node_modules/
+frontend/node_modules/
+
+# build output
+dist/
+frontend/dist/
+build/
+
+# caches
+.vite/
+*.pyc
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+
+# runtime artifacts and logs
+backend/exports/
+*.log
+*.err
+*.log.*
+_*.log
+_*.err
+_server.log*
+
+# user data, kept out of VCS
+*.dta
+*.xlsx
+*.xls
+*.sav
+*.parquet
+
+# third-party upstream copies (not this project code)
+StatsPAI-main/
+StatsPAI-main.zip
+stata-master/
+stata-master.zip
+DiD-main.zip
+_did_extract/
+src.zip
+
+# secrets never committed
+.env
+.env.*
+*.key
+*.pem
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/

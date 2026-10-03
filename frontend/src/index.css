@@ -1,0 +1,18 @@
+/* 全局少量样式覆盖
+
+只放必须用样式表才能做到的事——Ant Design 生成的 wrapper 元素拿不到 React 的
+inline style（它包在自定义 label 外面），所以侧边栏分组标题的间距在这里压。
+*/
+.ant-menu-item-group-title {
+  height: auto !important;
+  line-height: 1 !important;
+  padding: 16px 0 6px 24px !important;
+  font-size: 10px !important;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+/* 资源管理页签的徽标行高一点可读性 */
+.ant-tabs-tag {
+  font-size: 13px;
+}

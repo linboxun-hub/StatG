@@ -1,0 +1,43 @@
+# -*- coding: utf-8 -*-
+"""旧的 LIANXH_KNOWLEDGE 常量，降级为兜底文本。
+
+只在知识库「Stata命令速查」里没有任何条目时才会被用——也就是没跑过
+ensure_builtins() 的场合。正常情况下内置知识走知识库条目，不读这里。
+"""
+
+FALLBACK = """
+你是一个专业的计量经济学和实证研究助手。以下是命令速查。
+
+### 数据操作
+use "file.dta", clear；xtset id year；summarize y x, detail；describe；tab var1 var2
+
+### 回归
+regress y x1 x2, vce(robust)；xtreg y x, fe vce(cluster id)；xtreg y x, re；
+ivregress 2sls y x1 (endog=iv1 iv2)；reghdfe y x, absorb(id year) vce(cluster id)
+
+### 面板流程
+xtset id year → xtsum → xtreg fe / re → hausman fe re → 加聚类标准误
+
+### 因果推断
+DID: xtreg y treat_post, fe vce(cluster id) + 平行趋势
+Staggered DID: csdid y x, ivar(id) time(year) gvar(first_treat)
+RDD: rdrobust y x, c(0)；rdplot；rddensity
+PSM: psmatch2 treat x, outcome(y) ate
+
+### 诊断
+estat hettest；vif；estat firststage；estat overid
+
+### 输出
+esttab using "t.rtf", se ar2 star(* 0.1 ** 0.05 *** 0.01)；outreg2；
+coefplot；margins, dydx(x)
+
+### 交互项
+Y = b0 + b1*X + b2*Z + b3*X*Z；X 的边际效应 = b1 + b3*Z
+regress y c.x##c.z → margins, dydx(x) → marginsplot
+
+### 模型选择
+截面：OLS → 异方差检验 → 内生性则 IV
+面板：Hausman 选 FE/RE → 聚类 → DID/事件研究
+时间序列：ADF → ACF/PACF → ARIMA/VECM
+政策评估：DID → RDD → PSM → 合成控制
+""".strip()
