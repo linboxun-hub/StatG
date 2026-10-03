@@ -302,23 +302,23 @@ if ($Thin -gt 0) {
   "  圈磨细: {0}px（原 142px 左右）" -f $Thin
 }
 
-# 侧边栏/启动页用：中间掏空，透明底，让后面的底色透出来
-$work.Save("$OutDir\logo-icon.png", [System.Drawing.Imaging.ImageFormat]::Png)
-"  logo-icon.png   圈磨细 + 中间镂空（侧边栏 52px / 启动页 200px 用它）"
-
-# .ico 用：垫一块深紫圆盘当底。透明图标贴到白色任务栏上，白柱子会消失
-$disc = New-Object System.Drawing.Bitmap($Size, $Size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+# ── 3. 实心紫盘 + 白色图表（对齐 GitHub 头像的样式）──
+# 原图是「紫圈 + 纯黑内心」，直接当图标会看见一圈亮边包着一块黑洞。
+# 头像是把内心也填成同一个紫，于是整个圆是一个实心紫盘，白柱子白折线浮在上面——
+# 这就是要的效果。圆盘半径取圈的实测外半径，边缘正好收在原圈的边界上。
+$VioletR = 124; $VioletG = 58; $VioletB = 237      # #7C3AED，和圈的紫同一个色
+$icon = New-Object System.Drawing.Bitmap($Size, $Size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
 $ratio = $ringR / $half
-Invoke-Pixels $disc { param($w, $h, $s, $b) [ImgUtil]::Disc($b, $w, $h, $s, 53, 25, 107, 12, 10, 30, $script:ratio) }
-$dg = [System.Drawing.Graphics]::FromImage($disc)
-$dg.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-$dg.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
-$dg.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-$dg.DrawImage($work, $cloneRect)
-$dg.Dispose()
-$disc.Save("$OutDir\logo-ico.png", [System.Drawing.Imaging.ImageFormat]::Png)
-$disc.Dispose()
-"  logo-ico.png   同款 + 深紫圆盘（.ico 用，浅色背景才撑得住）"
+Invoke-Pixels $icon { param($w, $h, $s, $b) [ImgUtil]::Disc($b, $w, $h, $s, $script:VioletR, $script:VioletG, $script:VioletB, $script:VioletR, $script:VioletG, $script:VioletB, $script:ratio) }
+$ig = [System.Drawing.Graphics]::FromImage($icon)
+$ig.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+$ig.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
+$ig.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+$ig.DrawImage($work, $cloneRect)
+$ig.Dispose()
+$icon.Save("$OutDir\logo-icon.png", [System.Drawing.Imaging.ImageFormat]::Png)
+$icon.Dispose()
+"  logo-icon.png   实心紫盘 + 白图表（侧边栏 52px / 启动页 200px / .ico 共用）"
 
 $work.Dispose()
 $srcImg.Dispose(); $srcBmp.Dispose()

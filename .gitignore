@@ -15,6 +15,9 @@ __pycache__/
 frontend/_vite.*.log
 # 桌面版截图等过程产物
 desktop/app-*.png
+desktop/_*/
+desktop/_*.png
+desktop/_*.log
 # runtime artifacts and logs
 backend/exports/
 *.log
