@@ -1,0 +1,32 @@
+{
+  "name": "stata-assistant-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Stata 实证数据分析助手（桌面版）",
+  "main": "main.js",
+  "author": "cc园区",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64",
+    "dist:portable": "electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.cc.stata-assistant",
+    "productName": "Stata助手",
+    "directories": { "output": "release" },
+    "files": ["main.js", "preload.js", "build/**"],
+    "extraResources": [
+      { "from": "../frontend/dist", "to": "frontend-dist" },
+      { "from": "../backend", "to": "backend", "filter": ["**/*", "!**/__pycache__/**", "!_server.log*"] }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    }
+  }
+}

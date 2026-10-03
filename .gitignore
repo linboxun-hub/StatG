@@ -1,19 +1,16 @@
 # deps: reproducible from package.json / requirements.txt
 node_modules/
 frontend/node_modules/
-
 # build output
-dist/
 frontend/dist/
-build/
-
+# 闁哄瀚紓鎾存綇閹惧啿姣夐柨娑樼墔缁酣宕滃鍥朵紓闁挎稒鐭焑sktop/build 闁哄嫷鍨辩花顕€鎯嶆笟濠勭閻熸洑绀侀崣鍡樻償閹垮嫮绀?
+frontend/dist/
 # caches
 .vite/
 *.pyc
 __pycache__/
 .pytest_cache/
 .mypy_cache/
-
 # runtime artifacts and logs
 backend/exports/
 *.log
@@ -22,14 +19,12 @@ backend/exports/
 _*.log
 _*.err
 _server.log*
-
 # user data, kept out of VCS
 *.dta
 *.xlsx
 *.xls
 *.sav
 *.parquet
-
 # third-party upstream copies (not this project code)
 StatsPAI-main/
 StatsPAI-main.zip
@@ -38,16 +33,24 @@ stata-master.zip
 DiD-main.zip
 _did_extract/
 src.zip
-
 # secrets never committed
 .env
 .env.*
 *.key
 *.pem
-
 # OS / editor
 .DS_Store
 Thumbs.db
 desktop.ini
 .idea/
 .vscode/
+# Electron desktop packaging
+desktop/node_modules/
+desktop/release/
+desktop/run.out.log
+desktop/run.err.log
+desktop/*.log
+desktop/.eb-cache/
+desktop/.electron-cache/
+desktop/package-lock.json
+desktop-app-screenshot.png
