@@ -27,7 +27,7 @@
         "provider": "github",
         "owner": "linboxun-hub",
         "repo": "StatG",
-        "releaseType": "draft"
+        "releaseType": "release"
       }
     ],
     "extraResources": [
