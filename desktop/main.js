@@ -7,7 +7,7 @@
 // 后端解释器：依次找 STATA_PYTHON、安装包自带的 Python 运行时、本机 Anaconda、
 // PATH 上的 python。自带那份连依赖一起打包，装完即用，不用另装 Anaconda。
 
-const { app, BrowserWindow, shell, ipcMain } = require('electron')
+const { app, BrowserWindow, shell, ipcMain, screen } = require('electron')
 const { spawn, exec } = require('child_process')
 const http = require('http')
 const https = require('https')
@@ -353,10 +353,21 @@ async function checkUpdateOnStartup() {
 }
 
 // ── 窗口 ──
-// 默认尺寸按 1673×1085 定。这是「首次启动」和「用户改完之后的还原值」，
-// 用户自己拖过大小之后会存进 window-state.json，那边优先。
-const DEFAULT_WIN_W = 1673
-const DEFAULT_WIN_H = 1085
+// 目标尺寸按「物理像素」给，指的是整个程序的外框窗口（连边框、隐藏标题栏那层
+// 一起算）。参照的是 Claude 桌面端：1600 x 932。
+//
+// 为什么不能直接把 1600x932 填给 BrowserWindow：它的 width/height 用的是
+// 逻辑像素（DIP），而截图量到的是物理像素。这块屏是 125% 缩放，两者差 1.25
+// 倍——直接填会变成 2000x1165 物理，比 1920x1200 的屏幕还大，被系统夹掉，
+// 最后窗口铺满屏幕，看不出任何变化。所以按显示器缩放换算一遍再填。
+// 这样不管跑到 100% 还是 200% 的机器上，窗口的实际大小都是同一个。
+const TARGET_WIN_W = 1600   // 物理像素
+const TARGET_WIN_H = 932
+
+function defaultWinSize() {
+  const sf = screen.getPrimaryDisplay().scaleFactor || 1
+  return { width: Math.round(TARGET_WIN_W / sf), height: Math.round(TARGET_WIN_H / sf) }
+}
 
 function stateFile() { return path.join(app.getPath('userData'), 'window-state.json') }
 
@@ -379,8 +390,9 @@ function saveWindowState() {
 
 function createWindow() {
   const st = loadWindowState()
+  const dflt = defaultWinSize()
   win = new BrowserWindow({
-    width: st?.width || DEFAULT_WIN_W, height: st?.height || DEFAULT_WIN_H,
+    width: st?.width || dflt.width, height: st?.height || dflt.height,
     x: st?.x, y: st?.y,
     minWidth: 1100, minHeight: 700, show: false,
     icon: fs.existsSync(ICON) ? ICON : undefined,
@@ -407,7 +419,7 @@ function createWindow() {
     return { action: 'deny' }
   })
   // 记住位置和尺寸。之前是「没有存档就最大化」，那样首启动永远看不到
-  // DEFAULT_WIN_W/H 指定的尺寸，改默认值等于没改。现在只在存档里记着
+  // defaultWinSize() 指定的尺寸，改默认值等于没改。现在只在存档里记着
   // 最大化时才还原最大化，其余情况按给定尺寸开。
   if (st?.maximized) win.maximize()
   let saveTimer = null
