@@ -353,6 +353,11 @@ async function checkUpdateOnStartup() {
 }
 
 // ── 窗口 ──
+// 默认尺寸按 1673×1085 定。这是「首次启动」和「用户改完之后的还原值」，
+// 用户自己拖过大小之后会存进 window-state.json，那边优先。
+const DEFAULT_WIN_W = 1673
+const DEFAULT_WIN_H = 1085
+
 function stateFile() { return path.join(app.getPath('userData'), 'window-state.json') }
 
 function loadWindowState() {
@@ -375,13 +380,20 @@ function saveWindowState() {
 function createWindow() {
   const st = loadWindowState()
   win = new BrowserWindow({
-    width: st?.width || 1480, height: st?.height || 940,
+    width: st?.width || DEFAULT_WIN_W, height: st?.height || DEFAULT_WIN_H,
     x: st?.x, y: st?.y,
     minWidth: 1100, minHeight: 700, show: false,
     icon: fs.existsSync(ICON) ? ICON : undefined,
     backgroundColor: '#0f172a',
     autoHideMenuBar: true,
     title: 'StatG',
+    // 藏掉原生标题栏。留着它，窗口顶上就多一条灰底写着「StatG: 实证数据分析
+    // 助手」的框，程序自己已经有一条白顶栏了，两条上下叠着很冗余。
+    // hidden 之后原生标题栏不占高度，最小化/最大化/关闭会浮在顶栏右端，
+    // 靠下面的 titleBarOverlay 把它们的底色和尺寸对齐到那条白顶栏上。
+    // 代价是那块地方不再自动可拖，所以前端得给顶栏补 -webkit-app-region: drag。
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#ffffff', symbolColor: '#475569', height: 64 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -394,8 +406,10 @@ function createWindow() {
     shell.openExternal(url)
     return { action: 'deny' }
   })
-  // 记住位置和尺寸；默认以最大化打开，界面不会忽大忽小
-  if (st?.maximized !== false) win.maximize()
+  // 记住位置和尺寸。之前是「没有存档就最大化」，那样首启动永远看不到
+  // DEFAULT_WIN_W/H 指定的尺寸，改默认值等于没改。现在只在存档里记着
+  // 最大化时才还原最大化，其余情况按给定尺寸开。
+  if (st?.maximized) win.maximize()
   let saveTimer = null
   const saveSoon = () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveWindowState, 400) }
   win.on('resize', saveSoon)

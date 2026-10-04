@@ -168,6 +168,9 @@ export default function Layout() {
         <div style={{
           height: 84, display: 'flex', alignItems: 'center', gap: 12, padding: '0 20px',
           borderBottom: '1px solid #1e293b', flexShrink: 0,
+          // 原生标题栏藏掉之后，窗口顶部这块不会自动变成拖拽区。侧边栏在最左边，
+          // 和右上角那三个窗口按钮不打架，整块设成 drag 最顺手
+          WebkitAppRegion: 'drag',
         }}>
           <img src="/logo-icon.png" alt="StatG" style={{ width: 52, height: 52, borderRadius: 12, display: 'block' }} />
           <div>
@@ -235,6 +238,10 @@ export default function Layout() {
           background: '#fff', padding: '0 32px', height: 64, flexShrink: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           borderBottom: '1px solid #e2e8f0', zIndex: 10,
+          // 顶栏没有可点的东西，整条设成拖拽区刚好补上原生标题栏的功能。
+          // 右边距留够：右上角那三个窗口按钮浮在这一层上面，别让标题挤到它们
+          paddingRight: 170,
+          WebkitAppRegion: 'drag',
         }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#1e293b' }}>
