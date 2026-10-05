@@ -1,0 +1,93 @@
+[package]
+name = "statg-vision"
+version = "1.0.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "StatG 桌面视觉 sidecar — 截图 / OCR / 元素检测 / 输入控制（vendored from Nuphus desktop-api）"
+repository = "https://github.com/mrpulor-gh/nuphus"
+rust-version = "1.78"
+
+[[bin]]
+name = "statg-vision"
+path = "src/main.rs"
+
+[lib]
+name = "statg_vision"
+path = "src/lib.rs"
+
+[features]
+default = []
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.8", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# 截图
+xcap = "0.9.7"
+
+# 图像处理（读取截图 BMP / 编码 PNG）
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif"] }
+
+# 缓存
+lru = "0.12"
+
+# base64（找图的模板传输）
+base64 = "0.22"
+
+# ONNX Runtime（YOLO 元素检测 / PaddleOCR）。
+# 固定 rc.12：rc.13 需要新版 onnxruntime，上游主仓 Cargo.lock 钉的是 rc.12。
+#
+# 不用 default-features，改为显式列举——default 里的 download-binaries / tls-native
+# 会把 ureq -> native-tls -> schannel 整条 TLS 栈拖进来（本 sidecar 从不联网）。
+# 但 default 里的 api-24 **必须保留**：少了它 ort-sys 生成的绑定变少，ort 自己的
+# src/ep/vitis.rs 会引用不存在的 SessionOptionsAppendExecutionProvider_VitisAI 而编译失败
+# （这一条已实测踩到）。download-binaries 也不影响我们：load-dynamic 会触发
+# ort-sys/disable-linking，其 build.rs 直接 early-return，不下载任何东西。
+#
+# features 对应 default 的：std(load-dynamic 自带) / ndarray / tracing / copy-dylibs / api-24。
+ort = { version = "=2.0.0-rc.12", default-features = false, features = ["load-dynamic", "ndarray", "tracing", "copy-dylibs", "api-24"] }
+ndarray = "0.17"
+
+# 应用数据目录
+dirs = "5"
+
+tokio = { version = "1.37", features = ["rt-multi-thread", "macros", "time", "sync", "signal"] }
+
+[target.'cfg(not(windows))'.dependencies]
+# 非 Windows 鼠标/键盘（macOS + Linux via enigo）
+enigo = "0.2"
+# macOS 剪贴板前置声明
+arboard = "3.4"
+
+[target.'cfg(windows)'.dependencies]
+# Windows API
+windows = { version = "0.56", features = [
+    "Win32",
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+    "Win32_Storage_FileSystem",
+    "Win32_UI_Shell",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+] }
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[profile.release]
+# 不设 panic = "abort"：main.rs 用 catch_unwind 把单条请求的 panic 变成显式错误，
+# panic=abort 会让一次坏请求直接带走了 sidecar 整个进程。
+lto = true
+codegen-units = 1
+strip = true
+opt-level = "z"

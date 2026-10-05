@@ -33,7 +33,8 @@
     "extraResources": [
       { "from": "../frontend/dist", "to": "frontend-dist" },
       { "from": "python-runtime", "to": "python-runtime" },
-      { "from": "../backend", "to": "backend", "filter": ["**/*", "!**/__pycache__/**", "!_server.log*"] }
+      { "from": "../backend", "to": "backend", "filter": ["**/*", "!**/__pycache__/**", "!_server.log*"] },
+      { "from": "vision-dist", "to": "vision-runtime" }
     ],
     "win": {
       "icon": "build/icon.ico",

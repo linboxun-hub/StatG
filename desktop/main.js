@@ -27,6 +27,11 @@ let uiServer = null
 let win = null
 let backendErr = ''      // 后端最后一段报错，启动失败时拿给用户看
 
+// 桌面视觉 sidecar（见 build/vision.js）。默认不拉起：它是一个能全局点击、
+// 全局打字的进程，必须等用户在设置里显式打开才启动。
+const vision = require('./build/vision')
+vision.register()
+
 function log() { console.log('[desktop]', ...arguments) }
 
 // ── 前端静态资源目录：打包后从 extraResources 拿，开发时从仓库拿 ──
@@ -473,6 +478,19 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('window-all-closed', async () => { await stopBackend(); if (process.platform !== 'darwin') app.quit() })
   app.on('before-quit', async (e) => { e.preventDefault(); saveWindowState(); await stopBackend(); app.exit(0) })
+
+  // ── 窗口控制 ──
+  // Codex 风格壳的标题栏右端自己画了最小化/最大化/关闭。原生 titleBarOverlay
+  // 那三个键在深色标题栏上底色是对不上的（它按 #ffffff 白顶栏配的），
+  // 所以这里给前端三个显式入口，让前端那套按钮直接驱动窗口。
+  // 只动当前窗口；没有窗口时静默返回，别抛异常把渲染进程的调用链炸掉。
+  ipcMain.handle('win:minimize', () => win?.minimize())
+  ipcMain.handle('win:maximize', () => {
+    if (!win) return
+    if (win.isMaximized()) win.unmaximize()
+    else win.maximize()
+  })
+  ipcMain.handle('win:close', () => win?.close())
 
   // ── 更新相关的 IPC ──
   ipcMain.handle('app:info', () => ({

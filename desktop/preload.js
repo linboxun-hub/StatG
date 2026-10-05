@@ -9,6 +9,16 @@ contextBridge.exposeInMainWorld('stataApp', {
   platform: process.platform,
 })
 
+// statgWin：Codex 风格标题栏那三个窗口按钮用。
+// 原生 titleBarOverlay 的键是按白顶栏配色的，在深色标题栏上底色对不上，
+// 所以前端自己画一套，经这里驱动真窗口。浏览器里没有这个对象，
+// 前端按 typeof window.statgWin 判断，整组按钮直接不渲染。
+contextBridge.exposeInMainWorld('statgWin', {
+  minimize: () => ipcRenderer.invoke('win:minimize'),
+  maximize: () => ipcRenderer.invoke('win:maximize'),
+  close: () => ipcRenderer.invoke('win:close'),
+})
+
 contextBridge.exposeInMainWorld('statgApp', {
   platform: process.platform,
   // 程序版本 / 架构 / 当前配置的仓库
@@ -32,4 +42,21 @@ contextBridge.exposeInMainWorld('statgApp', {
     ipcRenderer.on('app:update-available', h)
     return () => ipcRenderer.removeListener('app:update-available', h)
   },
+})
+
+// statgVision：桌面视觉 sidecar。
+// 白名单式暴露——只给这几个固定入口，渲染进程拿不到"任意调 sidecar 方法"的能力。
+// 桌面能力默认关闭，先用 enable 打开；关闭时会顺带杀掉 sidecar 进程。
+contextBridge.exposeInMainWorld('statgVision', {
+  // 这个安装包里到底带没带 sidecar，以及当前开没开
+  available: () => ipcRenderer.invoke('vision:available'),
+  // 开/关桌面能力。开：拉起 sidecar 并探活；关：杀掉进程
+  enable: (on) => ipcRenderer.invoke('vision:enable', on),
+  // 探活 + 拿协议版本 / 模型就绪位
+  status: () => ipcRenderer.invoke('vision:status'),
+
+  // 调一个方法。method 必须在 build/vision.js 的 ALLOWED 白名单里。
+  call: (method, params) => ipcRenderer.invoke('vision:call', method, params),
+  // 把 capture 返回的截图读成 data URL，直接塞 <img>
+  captureImage: (captureId) => ipcRenderer.invoke('vision:capture_image', captureId),
 })

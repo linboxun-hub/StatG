@@ -9,7 +9,9 @@ import { useUpdate } from '../hooks/useUpdate'
 
 const { Text, Link } = Typography
 
-const PRESETS = [
+// 导出给 Studio 的模型选择器用。不复制一份——复制出去两份 PRESETS 迟早会漂移，
+// 用户在设置页加的模型和侧栏看到的对不上。
+export const PRESETS = [
   {
     name: 'OpenAI',
     url: 'https://api.openai.com',

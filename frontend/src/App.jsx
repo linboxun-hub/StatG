@@ -13,6 +13,7 @@ import Help from './pages/Help'
 import Projects from './pages/Projects'
 import Settings from './pages/Settings'
 import Resources from './pages/Resources'
+import Studio from './pages/Studio'
 
 export default function App() {
   return (
@@ -32,6 +33,10 @@ export default function App() {
         <Route path="/resources" element={<Resources />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
+      {/* 双模块原型：故意放在 Layout 外面。
+          它是「一个产品两个模块」的验证页，自己带完整外壳（顶栏 + toggle），
+          套在 Layout 里会出现两层侧边栏，反而看不出要演示的效果 */}
+      <Route path="/studio" element={<Studio />} />
     </Routes>
   )
 }

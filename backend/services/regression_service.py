@@ -368,7 +368,14 @@ class RegressionService:
         handler = getattr(self, "_m_" + method, None)
         if handler:
             try:
-                return handler(df, config)
+                out = handler(df, config)
+                if isinstance(out, dict) and "error" not in out:
+                    # 丢变量这件事在 run() 这层算，不让每个 _m_* 都记得往外传——
+                    # 三十个 handler 漏一个是必然的，而漏一个就是一次静默少算。
+                    w = self._var_warnings(df, config)
+                    if w:
+                        out["warnings"] = w
+                return out
             except Exception as e:
                 return {"error": f"{type(e).__name__}: {e}"}
         if method in STAGGERED_METHODS:
@@ -382,10 +389,29 @@ class RegressionService:
 
     # ── 配置解析 ──
 
+    @staticmethod
+    def _var_warnings(df, config):
+        """请求了但数据集里没有的变量，逐条说清楚。
+
+        之前在 _cfg 里静默过滤掉，前端拿到一张缺行的表还不知道为什么。
+        对做实证的人来说，"我控制了这个变量"和"它被悄悄剔掉了"是两回事，
+        所以必须显式报出来。
+        """
+        out = []
+        for kind, key in (("核心解释变量", "core_x"),
+                          ("控制变量", "controls"),
+                          ("聚类变量", "cluster_vars")):
+            for v in (config.get(key) or []):
+                if v not in df.columns:
+                    out.append(f"{kind} {v} 在当前数据集中不存在，已从模型中剔除")
+        return out
+
+
     def _cfg(self, df, config, allow_empty_core=False):
         y = config.get("y_var")
         if not y or y not in df.columns:
             raise ValueError("请选择因变量")
+        # 不存在的变量仍由 _var_warnings() 统一报，这里保持原样过滤即可
         core = [v for v in (config.get("core_x") or []) if v in df.columns]
         ctrl = [v for v in (config.get("controls") or []) if v in df.columns and v not in core]
         if not core and not allow_empty_core:

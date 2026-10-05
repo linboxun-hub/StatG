@@ -20,6 +20,7 @@ import {
   ProjectOutlined,
   FolderOpenOutlined,
   AppstoreOutlined,
+  BlockOutlined,
 } from '@ant-design/icons'
 
 const { Sider, Content, Header } = AntLayout
@@ -81,6 +82,7 @@ const MENU_GROUPS = [
   {
     label: '其他',
     items: [
+      { to: '/studio', keys: ['/studio'], icon: <BlockOutlined />, label: '双模块原型' },
       { to: '/resources', keys: ['/resources'], icon: <AppstoreOutlined />, label: '资源管理' },
       { to: '/help', keys: ['/help'], icon: <QuestionCircleOutlined />, label: '帮助文档' },
       { to: '/settings', keys: ['/settings'], icon: <SettingOutlined />, label: 'AI 设置' },
